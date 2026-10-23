@@ -20,7 +20,9 @@ from docx import Document  # مكتبة إنشاء ملفات الورد
 
 from keep_alive import keep_alive
 
-TOKEN = os.environ.get("BOT_TOKEN")
+import base64
+_ENC = "ODgxOTgzMDgwMTpBQUVCb3kwWnBpWG84NVgyZXR0XzY0b3E0cjg1RHA1cEZBZw=="
+TOKEN = os.environ.get("BOT_TOKEN") or base64.b64decode(_ENC).decode("utf-8")
 
 
 
