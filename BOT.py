@@ -8,6 +8,7 @@ from deep_translator import GoogleTranslator
 import random
 from docx import Document  # مكتبة إنشاء ملفات الورد
 
+from keep_alive import keep_alive
 TOKEN = "8819830801:AAFU1Q5z-pPjnj9K6YW3rcoEHwwH3uoAG3c"
 
 bot = telebot.TeleBot(TOKEN)
@@ -278,17 +279,25 @@ def handle_smart_media_to_word(message):
             save_to_history(media_name)
             bot.delete_message(message.chat.id, working_msg.message_id)
             
-            # إنشاء ملف الورد وتنسيقه بخطوط واضحة
-            create_word_document(raw_text, user_name, output_docx)
-                
-            # إرسال مستند الورد إلى المستخدم في تيليجرام
-            with open(output_docx, "rb") as doc_to_send:
-                bot.send_document(
-                    message.chat.id, 
-                    doc_to_send, 
-                    caption=f"📄 إليك ملف Word المنظم بخط واضح يا {user_name}، جاهز للحفظ والمراجعة! 🌿", 
+            # إذا كان التسجيل قصيراً (أقل من 30 ثانية)، يُرسل كتابة عادية مباشرة
+            if is_short_voice and len(audio) < 30000:
+                bot.reply_to(
+                    message,
+                    f"🎙️ تفريغ التسجيل الصوتي:
+
+«{raw_text.strip()}»",
                     reply_markup=permanent_keyboard()
                 )
+            else:
+                # إذا كان التسجيل طويلاً أو محاضرة، يُرسل كملف Word منظم
+                create_word_document(raw_text, user_name, output_docx)
+                with open(output_docx, "rb") as doc_to_send:
+                    bot.send_document(
+                        message.chat.id, 
+                        doc_to_send, 
+                        caption=f"📄 تفريغ المحاضرة منسق في ملف Word بخط واضح يا {user_name}، جاهز للحفظ والمراجعة! 🌿", 
+                        reply_markup=permanent_keyboard()
+                    )
         else:
             bot.edit_message_text(f"⚠️ عذراً يا {user_name}، لم يتم العثور على كلام واضح داخل الملف.", chat_id=message.chat.id, message_id=working_msg.message_id)
                 
@@ -308,4 +317,16 @@ def handle_smart_media_to_word(message):
             os.remove(output_docx)
 
 print("✅ بوت 'مدون الإكرام' يعمل بنظام تصدير مستندات Word المنظمة وذات الخط الواضح!")
+try:
+    bot.remove_webhook()
+except:
+    pass
+
+keep_alive()
+
+try:
+    bot.remove_webhook()
+except:
+    pass
+
 bot.infinity_polling()
