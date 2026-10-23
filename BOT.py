@@ -20,7 +20,7 @@ from docx import Document  # مكتبة إنشاء ملفات الورد
 
 from keep_alive import keep_alive
 
-TOKEN = "8819830801:AAEBoy0ZpiXo85X2ett_64oq4r85Dp5pFAg"
+TOKEN = os.environ.get("BOT_TOKEN")
 
 
 
