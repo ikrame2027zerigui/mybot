@@ -42,26 +42,27 @@ telethon_client = None
 
 def start_telethon_listener():
     global telethon_client
-    try:
-        import threading
-        from telethon.sync import TelegramClient, events
-        client = TelegramClient("bot_mtproto_worker", TG_API_ID, TG_API_HASH)
-        
-        @client.on(events.NewMessage)
-        def handle_mtproto_event(event):
-            try:
-                if event.message and event.message.media:
-                    TELETHON_MEDIA_CACHE[f"{event.chat_id}_{event.id}"] = event.message
-                    TELETHON_MEDIA_CACHE[event.chat_id] = event.message
-            except Exception:
-                pass
-                
-        client.start(bot_token=TOKEN)
-        telethon_client = client
-        print("✅ محرك MTProto المباشر متصل ويستمع للملفات الكبيرة بنجاح!")
-        client.run_until_disconnected()
-    except Exception as e:
-        print("Telethon worker error:", e)
+    while True:
+        try:
+            from telethon.sync import TelegramClient, events
+            client = TelegramClient("bot_mtproto_worker", TG_API_ID, TG_API_HASH)
+            
+            @client.on(events.NewMessage)
+            def handle_mtproto_event(event):
+                try:
+                    if event.message and event.message.media:
+                        TELETHON_MEDIA_CACHE[f"{event.chat_id}_{event.id}"] = event.message
+                        TELETHON_MEDIA_CACHE[event.chat_id] = event.message
+                except Exception:
+                    pass
+                    
+            client.start(bot_token=TOKEN)
+            telethon_client = client
+            print("✅ محرك MTProto المباشر متصل ويستمع للملفات الكبيرة بنجاح!")
+            client.run_until_disconnected()
+        except Exception as e:
+            print("Telethon worker notice, retrying in 20s:", e)
+            time.sleep(20)
 
 import threading
 threading.Thread(target=start_telethon_listener, daemon=True).start()
