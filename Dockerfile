@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # تثبيت مكتبات البوت
-RUN pip install --no-cache-dir pyTelegramBotAPI SpeechRecognition pydub python-docx deep-translator flask python-dotenv
+RUN pip install --no-cache-dir pyTelegramBotAPI SpeechRecognition pydub python-docx deep-translator flask python-dotenv telethon
 
 # نسخ ملفات المشروع
 COPY . .
