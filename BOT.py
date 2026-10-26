@@ -15,13 +15,17 @@ from deep_translator import GoogleTranslator
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 import requests
 
 from keep_alive import keep_alive
 
 # تحميل متغيرات البيئة من ملف .env
-load_dotenv()
+if load_dotenv:
+    load_dotenv()
 
 TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
@@ -226,7 +230,8 @@ def language_menu():
     markup = InlineKeyboardMarkup()
     markup.row_width = 2
     markup.add(
-        InlineKeyboardButton("العربية 🇩🇿", callback_data="lang_ar-DZ"),
+        InlineKeyboardButton("العربية (الجزائر) 🇩🇿", callback_data="lang_ar-DZ"),
+        InlineKeyboardButton("العربية الفصحى 🇸🇦", callback_data="lang_ar-SA"),
         InlineKeyboardButton("الروسية 🇷🇺", callback_data="lang_ru-RU"),
         InlineKeyboardButton("الفرنسية 🇫🇷", callback_data="lang_fr-FR"),
         InlineKeyboardButton("الانكليزية 🇺🇸", callback_data="lang_en-US")
@@ -239,11 +244,39 @@ def save_to_history(filename_desc):
         f.write(f"📁 {filename_desc} — ⏱️ التاريخ: {current_time}\n")
 
 # ==========================================
-# 📄 توليد مستند Word الأكاديمي المنسق
+# 📄 توليد مستند Word والملف النصي الأكاديمي
 # ==========================================
+def create_text_document(raw_text, user_name, output_filename):
+    dt_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+    lines = [
+        "╔═════════════════════════════════════════════════════╗",
+        "   🌟 مُدَوِّنُ الْإِكْرَامِ — تفريغ وتوثيق المحاضرة 🌟   ",
+        "╚═════════════════════════════════════════════════════╝",
+        "",
+        f"👤 الطالب(ة): {user_name}",
+        f"📅 التاريخ: {dt_str}",
+        "──────────────────────────────────────────────────",
+        "",
+        "📌 نص المحاضرة الكامل المنظم:",
+        "",
+        raw_text.strip(),
+        "",
+        "──────────────────────────────────────────────────",
+        "✨ تم التفريغ والتنسيق آلياً عبر بوت 'مدون الإكرام' 🌿"
+    ]
+    with open(output_filename, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
 def create_word_document(raw_text, user_name, output_filename):
     doc = Document()
     
+    # ضبط هوامش الصفحة (1 بوصة من كل جهة)
+    for s in doc.sections:
+        s.top_margin = Inches(1)
+        s.bottom_margin = Inches(1)
+        s.left_margin = Inches(1)
+        s.right_margin = Inches(1)
+        
     # عنوان رئيسي بخط كبير ومميز
     title = doc.add_heading("مُدَوِّنُ الْإِكْرَامِ — تقرير وتفريغ المحاضرة الأكاديمية", level=1)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -251,36 +284,57 @@ def create_word_document(raw_text, user_name, output_filename):
     # صندوق بيانات المحاضرة
     info_p = doc.add_paragraph()
     info_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run_info = info_p.add_run(
-        f"👤 الطالب(ة): {user_name}\n"
-        f"📅 تاريخ التفريغ: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-        f"🏛️ التخصص: كلية العلوم الإسلامية / الدراسات الجامعية\n"
+    dt_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+    meta_lines = [
+        f"👤 الطالب(ة): {user_name}",
+        f"📅 تاريخ التفريغ: {dt_str}",
+        "🏛️ التخصص: كلية العلوم الإسلامية والدراسات الجامعية",
         "──────────────────────────────────────────────────"
-    )
-    run_info.font.size = Pt(12)
+    ]
+    run_info = info_p.add_run("\n".join(meta_lines))
+    run_info.font.size = Pt(11)
     run_info.font.color.rgb = RGBColor(90, 90, 90)
 
-    # القسم الأول: محتوى وتفريغ المحاضرة الكامل
-    h2 = doc.add_heading("📌 نص المحاضرة الكامل ومحاورها المنظمة:", level=2)
-    h2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
-    # تقسيم النص إلى فقرات متماسكة (كل 50-70 كلمة في فقرة مستقلة)
+    # تقسيم النص إلى فقرات متماسكة سردية كاملة
     words = raw_text.strip().split()
     paragraph_chunks = []
     temp_chunk = []
     
     for word in words:
         temp_chunk.append(word)
-        if len(temp_chunk) >= 60:
+        if len(temp_chunk) >= 50 and any(p in word for p in ['؛', '،', '.', 'وبعد', 'المسألة', 'الحكم', 'العلماء', 'ذلك', 'تعالى', 'الله']):
+            paragraph_chunks.append(" ".join(temp_chunk))
+            temp_chunk = []
+        elif len(temp_chunk) >= 70:
             paragraph_chunks.append(" ".join(temp_chunk))
             temp_chunk = []
     if temp_chunk:
         paragraph_chunks.append(" ".join(temp_chunk))
 
-    for idx, p_text in enumerate(paragraph_chunks, 1):
+    # القسم الأول: محتوى وتفريغ المحاضرة الكامل
+    h2 = doc.add_heading("📌 نص المحاضرة الكامل ومحاورها المنظمة:", level=2)
+    h2.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    # تقسيم المحاضرة إلى محاور رئيسية كل بضع فقرات
+    section_titles = [
+        "المحور الأول: الاستفتاح والتمهيد للموضوع",
+        "المحور الثاني: عرض المسائل والأدلة والأصول المقررة",
+        "المحور الثالث: التفصيل والشرح والضوابط العلمية",
+        "المحور الرابع: الفروع والتطبيقات المعاصرة",
+        "المحور الخامس: الخاتمة وأهم النتائج"
+    ]
+    
+    sec_idx = 0
+    for idx, p_text in enumerate(paragraph_chunks):
+        if idx % 3 == 0 and sec_idx < len(section_titles) and len(paragraph_chunks) > 4:
+            sec_h = doc.add_heading(f"🔸 {section_titles[sec_idx]}:", level=3)
+            sec_h.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            sec_idx += 1
+            
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        run = p.add_run(f"[{idx}] {p_text}")
+        p.paragraph_format.line_spacing = 1.25
+        run = p.add_run(p_text.strip() + "؛")
         run.font.size = Pt(14)
         run.font.name = "Arial"
 
@@ -289,12 +343,11 @@ def create_word_document(raw_text, user_name, output_filename):
     h_summary = doc.add_heading("💡 أبرز الفوائد والمسائل المستخلصة من المحاضرة:", level=2)
     h_summary.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     
-    # استخراج تلقائي لأهم الجمل التي تحتوي على مصطلحات علمية أو مفتاحية
-    key_sentences = [p for p in paragraph_chunks if any(k in p for k in ["أصول", "حكم", "قاعدة", "دليل", "علة", "شرط", "سبب", "قول", "مسألة"])]
+    key_sentences = [p for p in paragraph_chunks if any(k in p for k in ["أصول", "حكم", "قاعدة", "دليل", "علة", "شرط", "سبب", "قول", "مسألة", "القياس", "الشريعة", "صلاة", "واجب"])]
     if not key_sentences:
         key_sentences = paragraph_chunks[:3]
     
-    for point in key_sentences[:4]:
+    for point in key_sentences[:5]:
         short_point = " ".join(point.split()[:25]) + "..."
         bullet = doc.add_paragraph(style='List Bullet')
         bullet.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -385,6 +438,15 @@ def smart_arabic_stt_corrector(text):
             corrected.append(w)
             continue
 
+        if core in HA_STRICT:
+            corrected.append(w)
+            continue
+
+        if core in COMMON_FEMININE_ROOTS:
+            core = COMMON_FEMININE_ROOTS[core]
+            corrected.append(prefix_p + core + suffix_p)
+            continue
+
         detected_prefix = ''
         sub_core = core
         for p in ['وال', 'فال', 'بال', 'كال', 'لل', 'ال', 'و', 'ف', 'ب', 'ك', 'ل']:
@@ -393,19 +455,21 @@ def smart_arabic_stt_corrector(text):
                 sub_core = core[len(p):]
                 break
 
-        if core in HA_STRICT or sub_core in HA_STRICT:
+        if sub_core in HA_STRICT:
             corrected.append(w)
             continue
 
         if sub_core in COMMON_FEMININE_ROOTS:
             core = detected_prefix + COMMON_FEMININE_ROOTS[sub_core]
-        elif core in COMMON_FEMININE_ROOTS:
-            core = COMMON_FEMININE_ROOTS[core]
         elif (core.endswith('يه') or core.endswith('ية')) and len(core) >= 4 and core not in HA_STRICT and sub_core not in HA_STRICT:
             core = core[:-1] + 'ة'
         elif core.endswith('اه') and len(core) >= 4 and core not in HA_STRICT and sub_core not in HA_STRICT:
             core = core[:-1] + 'ة'
         elif detected_prefix in ['ال', 'وال', 'بال', 'فال', 'كال', 'لل'] and core.endswith('ه') and len(core) >= 4:
+            core = core[:-1] + 'ة'
+        elif core.startswith('م') and core.endswith('ه') and len(core) >= 4 and core not in HA_STRICT and sub_core not in HA_STRICT:
+            core = core[:-1] + 'ة'
+        elif len(core) >= 5 and core[1] == 'ا' and core.endswith('ه') and core not in HA_STRICT and sub_core not in HA_STRICT:
             core = core[:-1] + 'ة'
 
         corrected.append(prefix_p + core + suffix_p)
@@ -421,47 +485,76 @@ def smart_arabic_stt_corrector(text):
 # ==========================================
 def process_audio_streaming(input_filepath, progress_callback=None):
     """
-    تقطيع وتفريغ المقاطع الصوتية الطويلة عبر ffmpeg مباشرة على القرص
-    لضمان عدم استهلاك الذاكرة (RAM) وعدم تعطل السيرفر نهائياً حتى في المقاطع التي تزيد عن ساعتين!
+    تقطيع وتفريغ المقاطع الصوتية الطويلة ومسجلات الهواتف بحماية فائقة ضد الانقطاع
+    دون استهلاك الذاكرة (RAM) وبأعلى جودة ممكنة.
     """
-    output_pattern = "st_chunk_%04d.wav"
+    session_id = f"st_{int(time.time())}_{random.randint(100, 999)}"
+    output_pattern = f"{session_id}_%04d.wav"
     
-    # أمر ffmpeg لتقسيم الصوت إلى مقاطع بطول 50 ثانية وبتردد 16kHz أحادي القناة
+    # أمر ffmpeg المقاوم لخلل مسجلات الهواتف والترميزات المختلفة
     cmd = [
-        "ffmpeg", "-y", "-i", input_filepath,
-        "-f", "segment", "-segment_time", "50",
+        "ffmpeg", "-y", "-err_detect", "ignore_err",
+        "-i", input_filepath,
+        "-vn", "-sn", "-dn",
+        "-f", "segment", "-segment_time", "45",
         "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1",
         output_pattern
     ]
     
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        print("FFmpeg segment notice:", e)
+        
+    chunk_files = sorted(glob.glob(f"{session_id}_*.wav"))
     
-    chunk_files = sorted(glob.glob("st_chunk_*.wav"))
+    # إذا تعذر التقطيع، نجرب التحويل المباشر كملف واحد كحل بديل
+    if not chunk_files:
+        fallback_wav = f"{session_id}_single.wav"
+        cmd_fallback = [
+            "ffmpeg", "-y", "-err_detect", "ignore_err",
+            "-i", input_filepath,
+            "-vn", "-sn", "-dn",
+            "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1",
+            fallback_wav
+        ]
+        try:
+            subprocess.run(cmd_fallback, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if os.path.exists(fallback_wav):
+                chunk_files = [fallback_wav]
+        except Exception:
+            pass
+
     total_chunks = len(chunk_files)
     transcribed_text = []
-
     last_callback_time = 0
 
     for idx, chunk_file in enumerate(chunk_files):
         try:
             with sr.AudioFile(chunk_file) as source:
                 audio_data = recognizer.record(source)
-                try:
-                    part = recognizer.recognize_google(audio_data, language=listening_language)
-                    if part:
-                        transcribed_text.append(part.strip())
-                except sr.UnknownValueError:
-                    pass
-                except Exception as ex:
-                    print(f"Chunk recognition error: {ex}")
+                for attempt in range(2):
+                    try:
+                        part = recognizer.recognize_google(audio_data, language=listening_language)
+                        if part:
+                            transcribed_text.append(part.strip())
+                        break
+                    except sr.UnknownValueError:
+                        break
+                    except Exception:
+                        if attempt == 0:
+                            time.sleep(0.5)
+        except Exception as ex:
+            print(f"Chunk processing notice [{idx}]: {ex}")
         finally:
-            # حذف المقطع فوراً لتحرير مساحة القرص
             if os.path.exists(chunk_file):
-                os.remove(chunk_file)
+                try:
+                    os.remove(chunk_file)
+                except Exception:
+                    pass
 
-        # تحديث شريط التقدم كل 10 ثوانٍ تقريباً أو في المقاطع المفصلية
         current_time = time.time()
-        if progress_callback and (current_time - last_callback_time > 10 or idx == total_chunks - 1):
+        if progress_callback and (current_time - last_callback_time > 8 or idx == total_chunks - 1):
             progress_callback(idx + 1, total_chunks)
             last_callback_time = current_time
 
@@ -591,8 +684,20 @@ def show_history(message):
 def set_language_callback(call):
     global listening_language
     listening_language = call.data.split('_')[1]
-    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, 
-                          text=f"✅ تم ضبط لغة التفريغ بنجاح إلى ({listening_language}). تفضل بإرسال التسجيل الصوتي الآن!")
+    lang_names = {
+        "ar-DZ": "العربية (الجزائر) 🇩🇿",
+        "ar-SA": "العربية الفصحى 🇸🇦",
+        "ru-RU": "الروسية 🇷🇺",
+        "fr-FR": "الفرنسية 🇫🇷",
+        "en-US": "الإنجليزية 🇺🇸"
+    }
+    display_name = lang_names.get(listening_language, listening_language)
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"✅ تم ضبط لغة التفريغ بنجاح إلى: **{display_name}**.\n\nتفضل بإرسال التسجيل الصوتي أو المحاضرة الآن! 🎙️",
+        parse_mode="Markdown"
+    )
 
 # ==========================================
 # 💬 معالجة الرسائل النصية والمحادثة الذكية
@@ -655,6 +760,7 @@ def handle_smart_media_to_word(message):
     working_msg = None
     temp_input = f"input_{message.chat.id}_{int(time.time())}.tmp"
     output_docx = f"محاضرة_{user_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
+    output_txt = output_docx.replace(".docx", ".txt")
 
     try:
         # تحديد الملف وحجمه
@@ -717,7 +823,7 @@ def handle_smart_media_to_word(message):
                         f"⏳ **جاري تفريغ المحاضرة يا {user_name}...** 🌿\n\n"
                         f"📊 **نسبة الإنجاز:** `[{bar}]` **{percent}%**\n"
                         f"🎙️ **معالجة المقطع:** {current} من أصل {total}\n\n"
-                        f"✨ يتم الآن تحويل الكلمات وبناء مستند Word الأكاديمي..."
+                        f"✨ يتم الآن تحويل الكلمات وبناء مستند Word الأكاديمي والملف النصي..."
                     ),
                     parse_mode="Markdown"
                 )
@@ -735,19 +841,46 @@ def handle_smart_media_to_word(message):
             except Exception:
                 pass
 
-            # إنشاء وتنسيق مستند الورد
+            # 1. إنشاء مستند Word الأكاديمي المنسق
             create_word_document(raw_text, user_name, output_docx)
+            # 2. إنشاء الملف النصي الخفيف
+            create_text_document(raw_text, user_name, output_txt)
 
+            # 3. إرسال ملخص / تفريغ مباشر في رسالة تيليجرام
+            words_count = len(raw_text.split())
+            if words_count <= 200:
+                chat_msg = (
+                    f"🎙️ **تفريغ التسجيل الصوتي كاملاً يا {user_name}:**\n\n"
+                    f"«{raw_text.strip()}»\n\n"
+                    f"📄 تم إرفاق مستند Word والملف النصي أدناه للمراجعة والطباعة ⬇️"
+                )
+            else:
+                preview = " ".join(raw_text.split()[:60]) + "..."
+                chat_msg = (
+                    f"🎓 **تم تفريغ المحاضرة وتنظيمها بنجاح يا {user_name}!** 🌿\n\n"
+                    f"📊 **إحصائيات المحاضرة:** عدد الكلمات: `{words_count}` كلمة تقريباً.\n"
+                    f"📅 **التاريخ:** `{datetime.now().strftime('%Y-%m-%d %H:%M')}`\n\n"
+                    f"📖 **مقتطف من بداية المحاضرة:**\n«{preview}»\n\n"
+                    f"👇 **تجدين أدناه مستند Word الأكاديمي المنسق + النسخة النصية الكاملة:**"
+                )
+
+            bot.send_message(message.chat.id, chat_msg, parse_mode="Markdown", reply_markup=permanent_keyboard())
+
+            # إرسال مستند Word المنسق
             with open(output_docx, "rb") as doc_to_send:
                 bot.send_document(
                     message.chat.id,
                     doc_to_send,
-                    caption=(
-                        f"📄 **تم تفريغ وتنظيم المحاضرة بنجاح يا {user_name}!** 🌿\n\n"
-                        f"• مستند Word منسق بخط كبير وواضح.\n"
-                        f"• يتضمن النص الكامل + أهم الفوائد + أسئلة مقترحة للامتحان.\n\n"
-                        f"نسأل الله لكم التوفيق والدرجات العلا! ✨"
-                    ),
+                    caption="📄 **مستند Word الأكاديمي المنسق** (محاور وعناوين وأسئلة امتحان) ✨",
+                    parse_mode="Markdown"
+                )
+
+            # إرسال الملف النصي الخفيف
+            with open(output_txt, "rb") as txt_to_send:
+                bot.send_document(
+                    message.chat.id,
+                    txt_to_send,
+                    caption="📝 **نسخة نصية خفيفة كاملة (.txt)** لسهولة القراءة والنسخ على أي هاتف 🌿",
                     parse_mode="Markdown",
                     reply_markup=permanent_keyboard()
                 )
@@ -762,8 +895,12 @@ def handle_smart_media_to_word(message):
         if "file is too big" in str(api_ex).lower():
             bot.reply_to(
                 message,
-                f"⚠️ **الملف يتجاوز الحد الأقصى المسموح به في تيليجرام (20 ميغابايت).**\n"
-                "يرجى إرساله كـ Voice Note أو تقسيمه وسيقوم البوت بتفريغه فوراً!",
+                f"⚠️ **الملف يتجاوز الحد الأقصى المسموح به في تيليجرام (20 ميغابايت).**\n\n"
+                "💡 **كيف تفرغين محاضرتك كاملة (ساعة ونصف أو ساعتين) بسهولة؟**\n"
+                "1️⃣ **الحل الأسهل (بدون أي برامج):** قومي بتحويل الملف إلى **تسجيل صوتي (Voice Note)** في تيليجرام، فتيليجرام يضغطه تلقائياً ليكون أقل من 15 ميغابايت وسيقبله البوت فوراً!\n"
+                "2️⃣ **أو ضغط الصوت:** تحويله إلى صيغة mp3 أو m4a بجودة 32kbps وسيصبح حجم الساعتين 14 ميغابايت فقط!\n"
+                "3️⃣ **أو تقسيم التسجيل إلى جزأين:** مثلاً 45 دقيقة لكل جزء.",
+                parse_mode="Markdown",
                 reply_markup=permanent_keyboard()
             )
         else:
@@ -777,7 +914,7 @@ def handle_smart_media_to_word(message):
                 pass
         bot.reply_to(
             message,
-            f"❌ عذراً يا {user_name}، حدث خطأ أثناء تفريغ هذا الملف. تأكد من سلامة صيغة الصوت وأعد المحاولة.",
+            f"❌ عذراً يا {user_name}، حدث خطأ أثناء تفريغ هذا الملف. تأكدي من سلامة صيغة الصوت وأعيدي المحاولة.",
             reply_markup=permanent_keyboard()
         )
     finally:
@@ -790,6 +927,11 @@ def handle_smart_media_to_word(message):
         if os.path.exists(output_docx):
             try:
                 os.remove(output_docx)
+            except Exception:
+                pass
+        if os.path.exists(output_txt):
+            try:
+                os.remove(output_txt)
             except Exception:
                 pass
 
