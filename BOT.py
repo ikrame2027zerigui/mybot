@@ -1,4 +1,5 @@
 import os
+import json
 import glob
 import time
 import random
@@ -72,6 +73,74 @@ recognizer = sr.Recognizer()
 translator = GoogleTranslator(source='auto', target='ar')
 
 listening_language = "ar-DZ"
+
+ADMIN_ID = 6619712661
+USERS_DB_FILE = "bot_users.json"
+ADMIN_BROADCAST_STATE = {}
+
+def load_users():
+    if os.path.exists(USERS_DB_FILE):
+        try:
+            with open(USERS_DB_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_users(users):
+    try:
+        with open(USERS_DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("Save users error:", e)
+
+def register_or_update_user(from_user, is_transcription=False):
+    if not from_user:
+        return
+    user_id = str(from_user.id)
+    users = load_users()
+    is_new = user_id not in users
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    first_name = from_user.first_name or "بدون اسم"
+    last_name = from_user.last_name or ""
+    username = from_user.username or "بدون يوزرنيم"
+    
+    if is_new:
+        users[user_id] = {
+            "first_name": first_name,
+            "last_name": last_name,
+            "username": username,
+            "joined_at": now_str,
+            "last_active": now_str,
+            "transcriptions_count": 1 if is_transcription else 0
+        }
+        save_users(users)
+        
+        # إشعار فوري للمديرة (إكرام) عند دخول أي طالب جديد
+        try:
+            total_students = len(users)
+            user_link = f"@{username}" if username != "بدون يوزرنيم" else f"{first_name}"
+            alert_msg = (
+                f"🔔 **طالب(ة) جديد(ة) انضم إلى بوت مدون الإكرام!** 🌿\n\n"
+                f"👤 **الاسم:** {first_name} {last_name}\n"
+                f"🆔 **الحساب:** {user_link}\n"
+                f"🔢 **معرف التيليجرام:** `{user_id}`\n"
+                f"📅 **التاريخ:** `{now_str}`\n\n"
+                f"📊 **إجمالي الطلاب المسجلين بالبوت:** `{total_students}` طالب(ة)"
+            )
+            bot.send_message(ADMIN_ID, alert_msg, parse_mode="Markdown")
+        except Exception as e:
+            print("Admin new user alert error:", e)
+    else:
+        users[user_id]["first_name"] = first_name
+        users[user_id]["last_name"] = last_name
+        users[user_id]["username"] = username
+        users[user_id]["last_active"] = now_str
+        if is_transcription:
+            users[user_id]["transcriptions_count"] = users[user_id].get("transcriptions_count", 0) + 1
+        save_users(users)
+
 HISTORY_FILE = "bot_history.txt"
 USER_SCHEDULES = {}
 USER_QUIZ_STATE = {}
@@ -251,11 +320,24 @@ bot.set_my_commands([
     BotCommand("history", "سجل الملفات 📂")
 ])
 
-def permanent_keyboard():
+def permanent_keyboard(user_id=None):
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(KeyboardButton("🎙️ أرسل تسجيلاً للتفريغ"), KeyboardButton("🧠 مسابقة العلوم الإسلامية"))
     markup.row(KeyboardButton("📚 مساعدة وأسئلة دراسية"), KeyboardButton("📅 جدولي الدراسي"))
     markup.row(KeyboardButton("🌐 تغيير لغة التفريغ"), KeyboardButton("❌ إلغاء"))
+    if user_id == ADMIN_ID or str(user_id) == str(ADMIN_ID):
+        markup.row(KeyboardButton("👑 لوحة تحكم الإدارة والمطورة"))
+    return markup
+
+def admin_panel_menu():
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("📊 إحصائيات البوت", callback_data="admin_stats"),
+        InlineKeyboardButton("👥 قائمة الطلاب المسجلين", callback_data="admin_users"),
+        InlineKeyboardButton("📁 تحميل تقرير الطلاب (.txt)", callback_data="admin_export"),
+        InlineKeyboardButton("📢 إذاعة رسالة للجميع", callback_data="admin_broadcast"),
+        InlineKeyboardButton("🔄 تحديث وحالة السيرفر", callback_data="admin_status")
+    )
     return markup
 
 def language_menu():
@@ -598,8 +680,119 @@ def process_audio_streaming(input_filepath, progress_callback=None):
 # ==========================================
 # 🌟 أوامر البوت الأساسية
 # ==========================================
+# ==========================================
+# 👑 لوحة تحكم مديرة ومطورة البوت (إكرام)
+# ==========================================
+@bot.message_handler(commands=['admin'])
+def handle_admin_command(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "⚠️ هذا الأمر مخصص لمديرة ومطورة البوت فقط.")
+        return
+    bot.send_message(
+        message.chat.id,
+        "👑 **أهلاً بكِ يا إكرام في لوحة تحكم إدارة وتطوير 'مدون الإكرام'!** 🌿\n\n"
+        "اختاري من الخيارات التالية لمتابعة نشاط الطلاب وإدارة البوت:",
+        parse_mode="Markdown",
+        reply_markup=admin_panel_menu()
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
+def handle_admin_callbacks(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "⚠️ الصلاحية للمديرة فقط.", show_alert=True)
+        return
+
+    users = load_users()
+    total_users = len(users)
+    total_transcriptions = sum(u.get("transcriptions_count", 0) for u in users.values())
+
+    if call.data == "admin_stats":
+        stats_text = (
+            "📊 **إحصائيات بوت 'مدون الإكرام' الشاملة:**\n\n"
+            f"👥 **إجمالي الطلاب المسجلين:** `{total_users}` طالب وطالبة\n"
+            f"🎙️ **إجمالي المحاضرات المفرغة:** `{total_transcriptions}` محاضرة\n"
+            f"📅 **تاريخ اليوم:** `{datetime.now().strftime('%Y-%m-%d %H:%M')}`\n"
+            f"⚙️ **خادم البوت:** متصل ويعمل بنشاط (Render Cloud) 🚀\n"
+            f"🌐 **لغة التفريغ الحالية:** `{listening_language}`\n\n"
+            "نسأل الله أن يبارك في هذا العمل وينفع به جميع طلاب العلم! 🌿"
+        )
+        bot.edit_message_text(stats_text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=admin_panel_menu())
+
+    elif call.data == "admin_users":
+        if not users:
+            bot.edit_message_text("👥 لا يوجد طلاب مسجلون في قاعدة البيانات حتى الآن.", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=admin_panel_menu())
+            return
+
+        lines = ["👥 **قائمة أحدث الطلاب المسجلين في البوت:**\n"]
+        recent_users = list(users.items())[-15:]
+        for idx, (uid, udata) in enumerate(reversed(recent_users), 1):
+            name = f"{udata.get('first_name', '')} {udata.get('last_name', '')}".strip()
+            uname = f"@{udata.get('username')}" if udata.get('username') and udata.get('username') != "بدون يوزرنيم" else "بدون يوزر"
+            count = udata.get('transcriptions_count', 0)
+            lines.append(f"{idx}. **{name}** ({uname}) — تفريغات: `{count}`")
+
+        msg_text = "\n".join(lines)
+        if total_users > 15:
+            msg_text += f"\n\n*(يوجد {total_users - 15} طالب إضافي، لتحميل القائمة الكاملة اضغطي تحميل تقرير الطلاب)*"
+        bot.edit_message_text(msg_text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=admin_panel_menu())
+
+    elif call.data == "admin_export":
+        report_file = "تقرير_طلاب_مدون_الإكرام.txt"
+        dt_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        content = [
+            "╔═════════════════════════════════════════════════════════╗",
+            "       🌟 بوت مدون الإكرام — التقرير الشامل للطلاب 🌟       ",
+            "╚═════════════════════════════════════════════════════════╝",
+            f"📅 تاريخ استخراج التقرير: {dt_str}",
+            f"👥 إجمالي الطلاب: {total_users}",
+            f"🎙️ إجمالي المحاضرات المفرغة: {total_transcriptions}",
+            "─────────────────────────────────────────────────────────",
+            ""
+        ]
+        for idx, (uid, udata) in enumerate(users.items(), 1):
+            name = f"{udata.get('first_name', '')} {udata.get('last_name', '')}".strip()
+            uname = f"@{udata.get('username')}" if udata.get('username') else "N/A"
+            joined = udata.get('joined_at', 'N/A')
+            active = udata.get('last_active', 'N/A')
+            trans_c = udata.get('transcriptions_count', 0)
+            content.append(f"[{idx}] المعرف: {uid} | الاسم: {name} | الحساب: {uname} | الانضمام: {joined} | آخر نشاط: {active} | المحاضرات: {trans_c}")
+
+        content.append("\n─────────────────────────────────────────────────────────")
+        content.append("✨ تم التصدير آلياً عبر لوحة تحكم مديرة البوت (إكرام) 🌿")
+        with open(report_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(content) + "\n")
+
+        with open(report_file, "rb") as doc:
+            bot.send_document(call.message.chat.id, doc, caption="📁 **تقرير الطلاب الشامل والمحدث** 🌿", parse_mode="Markdown")
+        bot.answer_callback_query(call.id, "✅ تم إرسال التقرير بنجاح!")
+
+    elif call.data == "admin_broadcast":
+        ADMIN_BROADCAST_STATE[ADMIN_ID] = True
+        bot.send_message(
+            call.message.chat.id,
+            "📢 **أهلاً بكِ في ميزة الإذاعة الجماعية للطلاب!**\n\n"
+            "أرسلي الآن الرسالة أو الإعلان الذي تريدين إذاعته (نص، صورة، أو مستند)، وسيقوم البوت بإرسالها فوراً لجميع الطلاب المسجلين بالبوت.\n\n"
+            "*(أو أرسلي كلمة 'إلغاء' للتراجع)*",
+            parse_mode="Markdown"
+        )
+        bot.answer_callback_query(call.id)
+
+    elif call.data == "admin_status":
+        uptime_info = (
+            "⚙️ **حالة خادم 'مدون الإكرام' السحابي:**\n\n"
+            "🟢 **حالة البوت:** نشط ويعمل 24/7 على منصة Render Cloud.\n"
+            f"👑 **المديرة المسجلة:** إكرام (`{ADMIN_ID}`)\n"
+            "⚡ **محرك الصوت والتفريغ:** Google Speech Engine + FFmpeg\n"
+            "📄 **محرك المستندات:** Python-Docx Engine\n"
+            f"📅 **توقيت السيرفر:** `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`\n\n"
+            "✨ جميع الخدمات تعمل بأعلى كفاءة واستقرار!"
+        )
+        bot.edit_message_text(uptime_info, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=admin_panel_menu())
+
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    register_or_update_user(message.from_user)
     name = message.from_user.first_name or "صديقي"
     banner_text = (
         "╔═══════════════════════════════════╗\n"
@@ -616,7 +809,7 @@ def send_welcome(message):
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "👇 *اختر لغة المحاضرة أو أرسل التسجيل الصوتي للبدء فوراً:*"
     )
-    bot.send_message(message.chat.id, banner_text, parse_mode="Markdown", reply_markup=permanent_keyboard())
+    bot.send_message(message.chat.id, banner_text, parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
     bot.send_message(message.chat.id, "اختر لغة التفريغ من القائمة أدناه:", reply_markup=language_menu())
 
 @bot.message_handler(commands=['help'])
@@ -628,7 +821,7 @@ def send_help(message):
         "3️⃣ **للمذاكرة والاختبار:** اضغط على زر '🧠 مسابقة العلوم الإسلامية' لاختبار معلوماتك فوراً.\n"
         "4️⃣ **للاستفسار الأكاديمي:** اكتب أي سؤال وسيجيبك المساعد العلمي الذكي."
     )
-    bot.send_message(message.chat.id, help_text, parse_mode="Markdown", reply_markup=permanent_keyboard())
+    bot.send_message(message.chat.id, help_text, parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
 
 # ==========================================
 # 🧠 مسابقات العلوم الإسلامية التفاعلية
@@ -681,7 +874,7 @@ def handle_quiz_callback(call):
             f"💡 **الإيضاح العلمي:**\n{explanation}"
         )
 
-    bot.send_message(chat_id, res_text, parse_mode="Markdown", reply_markup=permanent_keyboard())
+    bot.send_message(chat_id, res_text, parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
     bot.answer_callback_query(call.id)
     if chat_id in USER_QUIZ_STATE:
         del USER_QUIZ_STATE[chat_id]
@@ -691,26 +884,26 @@ def cancel_operation(message):
     chat_id = message.chat.id
     if chat_id in USER_QUIZ_STATE:
         del USER_QUIZ_STATE[chat_id]
-    bot.send_message(message.chat.id, "✅ تم إلغاء العمليات الحالية والعودة للوضع الطبيعي.", reply_markup=permanent_keyboard())
+    bot.send_message(message.chat.id, "✅ تم إلغاء العمليات الحالية والعودة للوضع الطبيعي.", reply_markup=permanent_keyboard(message.from_user.id))
 
 @bot.message_handler(commands=['set_schedule'])
 def set_schedule_start(message):
-    bot.send_message(message.chat.id, "✏️ أرسل جدولك الدراسي كاملاً في رسالة واحدة:", reply_markup=permanent_keyboard())
+    bot.send_message(message.chat.id, "✏️ أرسل جدولك الدراسي كاملاً في رسالة واحدة:", reply_markup=permanent_keyboard(message.from_user.id))
     bot.register_next_step_handler(message, lambda m: USER_SCHEDULES.update({m.chat.id: m.text}) and bot.reply_to(m, "✅ تم حفظ الجدول بنجاح!"))
 
 @bot.message_handler(commands=['schedule'])
 def show_schedule(message):
     schedule = USER_SCHEDULES.get(message.chat.id, "📅 لم تقم بإدخال جدولك بعد. استخدم `/set_schedule` لإدخاله.")
-    bot.send_message(message.chat.id, schedule, parse_mode="Markdown", reply_markup=permanent_keyboard())
+    bot.send_message(message.chat.id, schedule, parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
 
 @bot.message_handler(commands=['history'])
 def show_history(message):
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
             content = f.read()
-        bot.send_message(message.chat.id, f"📂 **سجل المحاضرات المفرغة:**\n\n{content}" if content.strip() else "📂 السجل فارغ.", parse_mode="Markdown", reply_markup=permanent_keyboard())
+        bot.send_message(message.chat.id, f"📂 **سجل المحاضرات المفرغة:**\n\n{content}" if content.strip() else "📂 السجل فارغ.", parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
     else:
-        bot.send_message(message.chat.id, "📂 لا يوجد سجل بعد.", reply_markup=permanent_keyboard())
+        bot.send_message(message.chat.id, "📂 لا يوجد سجل بعد.", reply_markup=permanent_keyboard(message.from_user.id))
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('lang_'))
 def set_language_callback(call):
@@ -737,6 +930,42 @@ def set_language_callback(call):
 @bot.message_handler(content_types=['text'])
 def handle_personalized_text(message):
     chat_id = message.chat.id
+    register_or_update_user(message.from_user)
+
+    # معالجة وضع الإذاعة الجماعية للمديرة
+    if message.from_user.id == ADMIN_ID and ADMIN_BROADCAST_STATE.get(ADMIN_ID):
+        if message.text and ("إلغاء" in message.text.lower() or message.text.lower() == "cancel"):
+            ADMIN_BROADCAST_STATE[ADMIN_ID] = False
+            bot.reply_to(message, "❌ تم إلغاء الإذاعة الجماعية.", reply_markup=permanent_keyboard(message.from_user.id))
+            return
+
+        ADMIN_BROADCAST_STATE[ADMIN_ID] = False
+        users = load_users()
+        sent_count = 0
+        status_msg = bot.reply_to(message, "⏳ جاري إرسال الإذاعة لجميع الطلاب...")
+        for uid in list(users.keys()):
+            if int(uid) != ADMIN_ID:
+                try:
+                    bot.send_message(
+                        int(uid),
+                        f"📢 **إعلان وتنبيه من إدارة 'مدون الإكرام':**\n\n{message.text}",
+                        parse_mode="Markdown"
+                    )
+                    sent_count += 1
+                except Exception:
+                    pass
+        bot.edit_message_text(
+            f"✅ **تمت الإذاعة بنجاح!**\n\nوصل الإعلان إلى `{sent_count}` طالب وطالبة من أصل `{len(users)}` مسجلين.",
+            chat_id=message.chat.id,
+            message_id=status_msg.message_id,
+            parse_mode="Markdown"
+        )
+        return
+
+    # زر لوحة التحكم للإدارة
+    if message.from_user.id == ADMIN_ID and "لوحة تحكم" in message.text:
+        handle_admin_command(message)
+        return
     user_name = message.from_user.first_name or "صديقي"
     text = message.text.strip()
     text_lower = text.lower()
@@ -750,9 +979,9 @@ def handle_personalized_text(message):
         quiz_data = USER_QUIZ_STATE[chat_id]
         correct = quiz_data["answer"]
         if text.upper() in [correct, f"({correct})", f"الخيار {correct}"]:
-            bot.reply_to(message, f"🎉 أحسنتِ يا {user_name}! إجابة صحيحة ({correct}).\n\n💡 {quiz_data['explanation']}", reply_markup=permanent_keyboard())
+            bot.reply_to(message, f"🎉 أحسنتِ يا {user_name}! إجابة صحيحة ({correct}).\n\n💡 {quiz_data['explanation']}", reply_markup=permanent_keyboard(message.from_user.id))
         else:
-            bot.reply_to(message, f"❌ إجابة خاطئة يا {user_name}. الإجابة الصائبة هي ({correct}).\n\n💡 {quiz_data['explanation']}", reply_markup=permanent_keyboard())
+            bot.reply_to(message, f"❌ إجابة خاطئة يا {user_name}. الإجابة الصائبة هي ({correct}).\n\n💡 {quiz_data['explanation']}", reply_markup=permanent_keyboard(message.from_user.id))
         del USER_QUIZ_STATE[chat_id]
         return
 
@@ -764,10 +993,10 @@ def handle_personalized_text(message):
         start_quiz(message)
         return
     elif "أرسل تسجيلاً" in text or text == "تفريغ" or "تسجيل" in text:
-        bot.reply_to(message, f"🎙️ تفضل يا {user_name}، أرسل الملف الصوتي أو مقطع الفيديو الآن وسأتولى تفريغه فوراً كملف Word احترافي!", reply_markup=permanent_keyboard())
+        bot.reply_to(message, f"🎙️ تفضل يا {user_name}، أرسل الملف الصوتي أو مقطع الفيديو الآن وسأتولى تفريغه فوراً كملف Word احترافي!", reply_markup=permanent_keyboard(message.from_user.id))
         return
     elif "مساعدة" in text or "أسئلة دراسية" in text:
-        bot.reply_to(message, f"📚 أهلاً بك يا {user_name}! أنا مساعدك في العلوم الإسلامية، اكتب لي أي سؤال فقهي أو أصولي أو مصطلح علمي وسأشرحه لك فوراً.", reply_markup=permanent_keyboard())
+        bot.reply_to(message, f"📚 أهلاً بك يا {user_name}! أنا مساعدك في العلوم الإسلامية، اكتب لي أي سؤال فقهي أو أصولي أو مصطلح علمي وسأشرحه لك فوراً.", reply_markup=permanent_keyboard(message.from_user.id))
         return
     elif "جدول" in text:
         show_schedule(message)
@@ -775,12 +1004,12 @@ def handle_personalized_text(message):
 
     # تحيات وأسئلة عامة
     if any(g in text_lower for g in ["سلام", "السلام عليكم", "مرحبا", "أهلا", "صباح", "مساء"]):
-        bot.reply_to(message, f"وعليكم السلام ورحمة الله وبركاته يا {user_name}! 🌿 أهلاً بك في بوت العلوم الإسلامية. تفضل بإرسال تسجيل المحاضرة أو اطرح استفسارك العلمي.", reply_markup=permanent_keyboard())
+        bot.reply_to(message, f"وعليكم السلام ورحمة الله وبركاته يا {user_name}! 🌿 أهلاً بك في بوت العلوم الإسلامية. تفضل بإرسال تسجيل المحاضرة أو اطرح استفسارك العلمي.", reply_markup=permanent_keyboard(message.from_user.id))
         return
 
     # التجاوب الذكي مع أسئلة الطالب ومذاكرته
     response = ask_ai_study_assistant(text, user_name)
-    bot.reply_to(message, response, parse_mode="Markdown", reply_markup=permanent_keyboard())
+    bot.reply_to(message, response, parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
 
 # ==========================================
 # 🎙️ استقبال وتفريغ الوسائط (مع حماية الحجم والمقاطع الطويلة)
@@ -819,7 +1048,7 @@ def handle_smart_media_to_word(message):
                 message,
                 f"⚠️ **عذراً يا {user_name}، حجم هذا الملف يتجاوز الحد الأقصى المطلق في تيليجرام (2000 ميغابايت / 2 جيجابايت).**",
                 parse_mode="Markdown",
-                reply_markup=permanent_keyboard()
+                reply_markup=permanent_keyboard(message.from_user.id)
             )
             return
 
@@ -829,14 +1058,14 @@ def handle_smart_media_to_word(message):
                 message,
                 f"⏳ **يا {user_name}، تم استلام ملف المحاضرة الكبير ({size_mb} ميغابايت). جاري التحميل المباشر فائق السرعة عبر MTProto والبدء في التفريغ...** 🌿",
                 parse_mode="Markdown",
-                reply_markup=permanent_keyboard()
+                reply_markup=permanent_keyboard(message.from_user.id)
             )
         else:
             working_msg = bot.reply_to(
                 message,
                 f"⏳ **يا {user_name}، جاري استلام ملف المحاضرة والبدء في تفريغه...** 🌿",
                 parse_mode="Markdown",
-                reply_markup=permanent_keyboard()
+                reply_markup=permanent_keyboard(message.from_user.id)
             )
 
         # تحميل الملف من تيليجرام بنظام التحميل الهجين الذكي
@@ -922,6 +1151,7 @@ def handle_smart_media_to_word(message):
 
         if raw_text and raw_text.strip():
             save_to_history(media_name)
+            register_or_update_user(message.from_user, is_transcription=True)
             
             try:
                 bot.delete_message(message.chat.id, working_msg.message_id)
@@ -951,7 +1181,7 @@ def handle_smart_media_to_word(message):
                     f"👇 **تجدين أدناه مستند Word الأكاديمي المنسق + النسخة النصية الكاملة:**"
                 )
 
-            bot.send_message(message.chat.id, chat_msg, parse_mode="Markdown", reply_markup=permanent_keyboard())
+            bot.send_message(message.chat.id, chat_msg, parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
 
             # إرسال مستند Word المنسق
             with open(output_docx, "rb") as doc_to_send:
@@ -969,7 +1199,7 @@ def handle_smart_media_to_word(message):
                     txt_to_send,
                     caption="📝 **نسخة نصية خفيفة كاملة (.txt)** لسهولة القراءة والنسخ على أي هاتف 🌿",
                     parse_mode="Markdown",
-                    reply_markup=permanent_keyboard()
+                    reply_markup=permanent_keyboard(message.from_user.id)
                 )
         else:
             bot.edit_message_text(
@@ -988,10 +1218,10 @@ def handle_smart_media_to_word(message):
                 "2️⃣ **أو ضغط الصوت:** تحويله إلى صيغة mp3 أو m4a بجودة 32kbps وسيصبح حجم الساعتين 14 ميغابايت فقط!\n"
                 "3️⃣ **أو تقسيم التسجيل إلى جزأين:** مثلاً 45 دقيقة لكل جزء.",
                 parse_mode="Markdown",
-                reply_markup=permanent_keyboard()
+                reply_markup=permanent_keyboard(message.from_user.id)
             )
         else:
-            bot.reply_to(message, f"❌ حدث خطأ من تيليجرام أثناء استلام الملف: {api_ex}", reply_markup=permanent_keyboard())
+            bot.reply_to(message, f"❌ حدث خطأ من تيليجرام أثناء استلام الملف: {api_ex}", reply_markup=permanent_keyboard(message.from_user.id))
     except Exception as e:
         print("Media Processing Error:", e)
         if working_msg:
@@ -1002,7 +1232,7 @@ def handle_smart_media_to_word(message):
         bot.reply_to(
             message,
             f"❌ عذراً يا {user_name}، حدث خطأ أثناء تفريغ هذا الملف. تأكدي من سلامة صيغة الصوت وأعيدي المحاولة.",
-            reply_markup=permanent_keyboard()
+            reply_markup=permanent_keyboard(message.from_user.id)
         )
     finally:
         # تنظيف كل الملفات المؤقتة
