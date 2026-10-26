@@ -36,15 +36,34 @@ if not TOKEN:
 TG_API_ID = int(os.environ.get("TG_API_ID", 35521120))
 TG_API_HASH = os.environ.get("TG_API_HASH", "149519bc317198bd16527e19fd4bada1")
 
+TELETHON_MEDIA_CACHE = {}
 telethon_client = None
-try:
-    from telethon.sync import TelegramClient
-    telethon_client = TelegramClient("bot_mtproto_sync", TG_API_ID, TG_API_HASH)
-    telethon_client.start(bot_token=TOKEN)
-    print("✅ محرك MTProto المباشر متصل وجاهز للتعامل مع ملفات حتى 2GB!")
-except Exception as e:
-    print("MTProto init notice:", e)
-    telethon_client = None
+
+def start_telethon_listener():
+    global telethon_client
+    try:
+        import threading
+        from telethon.sync import TelegramClient, events
+        client = TelegramClient("bot_mtproto_worker", TG_API_ID, TG_API_HASH)
+        
+        @client.on(events.NewMessage)
+        def handle_mtproto_event(event):
+            try:
+                if event.message and event.message.media:
+                    TELETHON_MEDIA_CACHE[f"{event.chat_id}_{event.id}"] = event.message
+                    TELETHON_MEDIA_CACHE[event.chat_id] = event.message
+            except Exception:
+                pass
+                
+        client.start(bot_token=TOKEN)
+        telethon_client = client
+        print("✅ محرك MTProto المباشر متصل ويستمع للملفات الكبيرة بنجاح!")
+        client.run_until_disconnected()
+    except Exception as e:
+        print("Telethon worker error:", e)
+
+import threading
+threading.Thread(target=start_telethon_listener, daemon=True).start()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
@@ -837,35 +856,46 @@ def handle_smart_media_to_word(message):
 
         # 2. للملفات الكبيرة (أكبر من 20 ميغابايت) أو في حال تعثر التحميل العادي: التحميل المباشر عبر MTProto
         if not download_success and telethon_client:
-            try:
-                peer = message.from_user.username if getattr(message.from_user, 'username', None) else message.chat.id
-                mt_msg = telethon_client.get_messages(peer, ids=message.message_id)
+            # ننتظر قليلاً (حتى 3 ثوانٍ) في حال كان وصول الرسالة جارياً في خيط الخلفية
+            mt_msg = None
+            for _ in range(6):
+                mt_msg = TELETHON_MEDIA_CACHE.get(f"{message.chat.id}_{message.message_id}") or TELETHON_MEDIA_CACHE.get(message.chat.id)
                 if mt_msg and mt_msg.media:
+                    break
+                time.sleep(0.5)
+
+            if mt_msg and mt_msg.media:
+                try:
                     telethon_client.download_media(mt_msg, file=temp_input)
                     if os.path.exists(temp_input) and os.path.getsize(temp_input) > 0:
                         download_success = True
-            except Exception as ex_mt:
-                print("Telethon direct download notice:", ex_mt)
+                except Exception as ex_dl:
+                    print("Telethon mt_msg download error:", ex_dl)
+
+            # محاولة احتياطية ثانية عبر معرف الملف المباشر (file_id)
+            if not download_success:
+                try:
+                    telethon_client.download_media(media_obj.file_id, file=temp_input)
+                    if os.path.exists(temp_input) and os.path.getsize(temp_input) > 0:
+                        download_success = True
+                except Exception as ex_fid:
+                    print("Telethon file_id download error:", ex_fid)
 
         if not download_success:
             if file_size > 20 * 1024 * 1024:
-                bot.edit_message_text(
-                    chat_id=message.chat.id,
-                    message_id=working_msg.message_id,
-                    text=(
-                        f"⚠️ **عذراً يا {user_name}، تعذر تحميل الملف الكبير ({size_mb} ميغابايت) مباشرة.**\n\n"
-                        "💡 **حل فوري وسهل:** قومي بإرسال التسجيل كـ **رسالة صوتية (Voice Note)** في تيليجرام، فتيليجرام يضغطه تلقائياً لأقل من 15 ميغابايت وسيقبله البوت فوراً!"
-                    ),
-                    parse_mode="Markdown"
+                err_text = (
+                    f"⚠️ عذراً يا {user_name}، تعذر تحميل هذا الملف الكبير ({size_mb} ميغابايت) مباشرة.\n\n"
+                    "💡 حل فوري ومضمون لتفريغ المحاضرة الآن:\n"
+                    "قومي بإرسال التسجيل كـ رسالة صوتية (Voice Note) في تيليجرام، فتيليجرام يضغطه تلقائياً لأقل من 15 ميغابايت وسيقبله البوت فوراً!"
                 )
-                return
             else:
-                bot.edit_message_text(
-                    chat_id=message.chat.id,
-                    message_id=working_msg.message_id,
-                    text=f"⚠️ عذراً يا {user_name}، حدث خطأ أثناء تحميل الملف من خوادم تيليجرام. يرجى إعادة المحاولة."
-                )
-                return
+                err_text = f"⚠️ عذراً يا {user_name}، حدث خطأ أثناء استلام الملف من تيليجرام. يرجى إعادة المحاولة."
+            
+            try:
+                bot.edit_message_text(text=err_text, chat_id=message.chat.id, message_id=working_msg.message_id)
+            except Exception:
+                bot.send_message(message.chat.id, err_text)
+            return
 
         # دالة رد النداء لتحديث شريط التقدم للطالب
         def update_progress(current, total):
