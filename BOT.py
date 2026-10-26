@@ -33,6 +33,19 @@ if not TOKEN:
     _ENC = "ODgxOTgzMDgwMTpBQUVCb3kwWnBpWG84NVgyZXR0XzY0b3E0cjg1RHA1cEZBZw=="
     TOKEN = base64.b64decode(_ENC).decode("utf-8")
 
+TG_API_ID = int(os.environ.get("TG_API_ID", 35521120))
+TG_API_HASH = os.environ.get("TG_API_HASH", "149519bc317198bd16527e19fd4bada1")
+
+telethon_client = None
+try:
+    from telethon.sync import TelegramClient
+    telethon_client = TelegramClient("bot_mtproto_sync", TG_API_ID, TG_API_HASH)
+    telethon_client.start(bot_token=TOKEN)
+    print("✅ محرك MTProto المباشر متصل وجاهز للتعامل مع ملفات حتى 2GB!")
+except Exception as e:
+    print("MTProto init notice:", e)
+    telethon_client = None
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 bot = telebot.TeleBot(TOKEN)
@@ -780,35 +793,79 @@ def handle_smart_media_to_word(message):
             media_obj = message.document
             media_name = message.document.file_name if message.document.file_name else "مستند"
 
-        # 🛑 الفحص المبكر لحجم الملف (تجاوز حد تيليجرام 20 ميغابايت)
+        # 🛑 الفحص لحجم الملف (الحد الأقصى المطلق في تيليجرام: 2000 ميغابايت / 2 جيجابايت!)
         file_size = getattr(media_obj, 'file_size', 0) or 0
-        if file_size > 20 * 1024 * 1024:
-            size_mb = round(file_size / (1024 * 1024), 1)
+        if file_size > 2000 * 1024 * 1024:
             bot.reply_to(
                 message,
-                f"⚠️ **عذراً يا {user_name}، حجم هذا الملف ({size_mb} ميغابايت) يتجاوز الحد المسموح في تيليجرام (20 ميغابايت).**\n\n"
-                "💡 **حلول سهلة لتفريغ محاضرتك (حتى لو كانت ساعتين):**\n"
-                "1️⃣ **أرسل المحاضرة كـ تسجيل صوتي (Voice Note):** فتيليجرام يقوم بضغط الصوت تلقائياً ليكون خفيفاً جداً ويقبله البوت.\n"
-                "2️⃣ **تقسيم التسجيل:** قسّم المقطع إلى جزأين (مثلاً ساعة لكل جزء).\n"
-                "3️⃣ **تقليل جودة الصوت (Bitrate):** تحويل الصوت إلى جودة (32kbps أو 64kbps) فيصبح حجم الساعتين أقل من 18 ميغابايت وسيقبله البوت فوراً!",
+                f"⚠️ **عذراً يا {user_name}، حجم هذا الملف يتجاوز الحد الأقصى المطلق في تيليجرام (2000 ميغابايت / 2 جيجابايت).**",
                 parse_mode="Markdown",
                 reply_markup=permanent_keyboard()
             )
             return
 
-        working_msg = bot.reply_to(
-            message,
-            f"⏳ **يا {user_name}، جاري استلام ملف المحاضرة والبدء في تفريغه...** 🌿",
-            parse_mode="Markdown",
-            reply_markup=permanent_keyboard()
-        )
+        size_mb = round(file_size / (1024 * 1024), 1)
+        if file_size > 20 * 1024 * 1024:
+            working_msg = bot.reply_to(
+                message,
+                f"⏳ **يا {user_name}، تم استلام ملف المحاضرة الكبير ({size_mb} ميغابايت). جاري التحميل المباشر فائق السرعة عبر MTProto والبدء في التفريغ...** 🌿",
+                parse_mode="Markdown",
+                reply_markup=permanent_keyboard()
+            )
+        else:
+            working_msg = bot.reply_to(
+                message,
+                f"⏳ **يا {user_name}، جاري استلام ملف المحاضرة والبدء في تفريغه...** 🌿",
+                parse_mode="Markdown",
+                reply_markup=permanent_keyboard()
+            )
 
-        # تحميل الملف من تيليجرام
-        file_info = bot.get_file(media_obj.file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
+        # تحميل الملف من تيليجرام بنظام التحميل الهجين الذكي
+        download_success = False
 
-        with open(temp_input, 'wb') as f:
-            f.write(downloaded_file)
+        # 1. للملفات العادية (أقل من أو يساوي 20 ميغابايت): التحميل السريع
+        if file_size <= 20 * 1024 * 1024:
+            try:
+                file_info = bot.get_file(media_obj.file_id)
+                downloaded_file = bot.download_file(file_info.file_path)
+                with open(temp_input, 'wb') as f:
+                    f.write(downloaded_file)
+                if os.path.exists(temp_input) and os.path.getsize(temp_input) > 0:
+                    download_success = True
+            except Exception as ex_down:
+                print("Standard bot download notice:", ex_down)
+
+        # 2. للملفات الكبيرة (أكبر من 20 ميغابايت) أو في حال تعثر التحميل العادي: التحميل المباشر عبر MTProto
+        if not download_success and telethon_client:
+            try:
+                peer = message.from_user.username if getattr(message.from_user, 'username', None) else message.chat.id
+                mt_msg = telethon_client.get_messages(peer, ids=message.message_id)
+                if mt_msg and mt_msg.media:
+                    telethon_client.download_media(mt_msg, file=temp_input)
+                    if os.path.exists(temp_input) and os.path.getsize(temp_input) > 0:
+                        download_success = True
+            except Exception as ex_mt:
+                print("Telethon direct download notice:", ex_mt)
+
+        if not download_success:
+            if file_size > 20 * 1024 * 1024:
+                bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=working_msg.message_id,
+                    text=(
+                        f"⚠️ **عذراً يا {user_name}، تعذر تحميل الملف الكبير ({size_mb} ميغابايت) مباشرة.**\n\n"
+                        "💡 **حل فوري وسهل:** قومي بإرسال التسجيل كـ **رسالة صوتية (Voice Note)** في تيليجرام، فتيليجرام يضغطه تلقائياً لأقل من 15 ميغابايت وسيقبله البوت فوراً!"
+                    ),
+                    parse_mode="Markdown"
+                )
+                return
+            else:
+                bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=working_msg.message_id,
+                    text=f"⚠️ عذراً يا {user_name}، حدث خطأ أثناء تحميل الملف من خوادم تيليجرام. يرجى إعادة المحاولة."
+                )
+                return
 
         # دالة رد النداء لتحديث شريط التقدم للطالب
         def update_progress(current, total):
