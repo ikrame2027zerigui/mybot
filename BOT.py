@@ -515,6 +515,7 @@ bot.set_my_commands([
     BotCommand("summary", "دليل المذاكرة السريعة 📝"),
     BotCommand("schedule", "جدول المحاضرات 📅"),
     BotCommand("set_schedule", "تعديل الجدول ✏️"),
+    BotCommand("translate", "ترجمة النصوص الأكاديمية 🌐"),
     BotCommand("cancel", "إلغاء العمليات الحالية ❌"),
     BotCommand("history", "سجل الملفات 📂")
 ])
@@ -1205,6 +1206,36 @@ def handle_quiz_callback(call):
     if chat_id in USER_QUIZ_STATE:
         del USER_QUIZ_STATE[chat_id]
 
+@bot.message_handler(commands=['translate'])
+def handle_translate_command(message):
+    user_name = message.from_user.first_name or "صديقي"
+    parts = message.text.split(maxsplit=1)
+    if len(parts) > 1 and parts[1].strip():
+        query = parts[1].strip()
+        try:
+            translated = translator.translate(query)
+            bot.reply_to(
+                message,
+                f"🌐 **الترجمة الفورية يا {user_name}:**\n\n«{translated}»",
+                parse_mode="Markdown",
+                reply_markup=permanent_keyboard(message.from_user.id)
+            )
+        except Exception:
+            bot.reply_to(
+                message,
+                "⚠️ تعذرت الترجمة الفورية حالياً. يرجى التأكد من كتابة النص بشكل صحيح والمحاولة لاحقاً.",
+                reply_markup=permanent_keyboard(message.from_user.id)
+            )
+    else:
+        bot.reply_to(
+            message,
+            f"🌐 **خدمة الترجمة الأكاديمية يا {user_name}:**\n\n"
+            "اكتب الأمر متبوعاً بالنص الذي تريد ترجمته، مثال:\n"
+            "`/translate Artificial intelligence in Islamic studies`",
+            parse_mode="Markdown",
+            reply_markup=permanent_keyboard(message.from_user.id)
+        )
+
 @bot.message_handler(commands=['cancel'])
 def cancel_operation(message):
     chat_id = message.chat.id
@@ -1214,8 +1245,24 @@ def cancel_operation(message):
 
 @bot.message_handler(commands=['set_schedule'])
 def set_schedule_start(message):
-    bot.send_message(message.chat.id, "✏️ أرسل جدولك الدراسي كاملاً في رسالة واحدة:", reply_markup=permanent_keyboard(message.from_user.id))
-    bot.register_next_step_handler(message, lambda m: USER_SCHEDULES.update({m.chat.id: m.text}) and bot.reply_to(m, "✅ تم حفظ الجدول بنجاح!"))
+    user_name = message.from_user.first_name or "طالب العلم"
+    bot.send_message(
+        message.chat.id,
+        f"✏️ **تعديل الجدول الدراسي يا {user_name}:**\n\n"
+        "تفضل بإرسال جدول محاضراتك الأسبوعي كاملاً في رسالة واحدة (المقاييس، الأوقات، والقاعات):",
+        parse_mode="Markdown",
+        reply_markup=permanent_keyboard(message.from_user.id)
+    )
+    def save_schedule_step(m):
+        USER_SCHEDULES[m.chat.id] = m.text
+        bot.reply_to(
+            m,
+            f"✅ **ما شاء الله! تم حفظ جدولك الدراسي والامتحانات بنجاح يا {user_name}!** 📅🌿\n\n"
+            "يمكنك مراجعته واستعراضه في أي وقت بالضغط على زر **'📅 جدولي الدراسي والامتحانات'**.",
+            parse_mode="Markdown",
+            reply_markup=permanent_keyboard(m.from_user.id)
+        )
+    bot.register_next_step_handler(message, save_schedule_step)
 
 @bot.message_handler(commands=['schedule'])
 def show_schedule(message):
@@ -1300,16 +1347,32 @@ def handle_personalized_text(message):
         cancel_operation(message)
         return
 
-    # فحص إجابة الكويز إذا كتبت كتابة
+    # فحص إجابة الكويز إذا كان الطالب في وضع اختبار
     if chat_id in USER_QUIZ_STATE:
         quiz_data = USER_QUIZ_STATE[chat_id]
         correct = quiz_data["answer"]
-        if text.upper() in [correct, f"({correct})", f"الخيار {correct}"]:
-            bot.reply_to(message, f"🎉 أحسنتِ يا {user_name}! إجابة صحيحة ({correct}).\n\n💡 {quiz_data['explanation']}", reply_markup=permanent_keyboard(message.from_user.id))
+        
+        # إذا ضغط الطالب على أي زر رئيسي من أزرار اللوحة أو كتب تحية أو إلغاء، نلغي حالة الكويز ونمرر الطلب
+        is_menu_button = any(btn in text for btn in [
+            "أرسل تسجيلاً", "تفريغ", "تسجيل", "بنك الأسئلة", "المراجعة الذاتية", "مسابقة",
+            "معجم", "المعجم", "قاموس", "جدول", "الامتحانات", "تغيير لغة", "لغة", "إلغاء", "لوحة تحكم"
+        ]) or any(g in text_lower for g in ["سلام", "السلام عليكم", "مرحبا", "أهلا", "صباح", "مساء"])
+
+        if is_menu_button:
+            del USER_QUIZ_STATE[chat_id]
+            # يكمل الكود تلقائياً لتنفيذ وظيفة الزر دون أن يقول 'إجابة خاطئة'!
         else:
-            bot.reply_to(message, f"❌ إجابة خاطئة يا {user_name}. الإجابة الصائبة هي ({correct}).\n\n💡 {quiz_data['explanation']}", reply_markup=permanent_keyboard(message.from_user.id))
-        del USER_QUIZ_STATE[chat_id]
-        return
+            clean_ans = text.strip().upper().replace("(", "").replace(")", "").replace("الخيار", "").strip()
+            if clean_ans in ["أ", "ب", "ج", "A", "B", "C"]:
+                is_correct = (clean_ans == correct) or (clean_ans == "A" and correct == "أ") or (clean_ans == "B" and correct == "ب") or (clean_ans == "C" and correct == "ج")
+                if is_correct:
+                    bot.reply_to(message, f"🎉 أحسنتِ وأصبتِ يا {user_name}! إجابة صحيحة ({correct}).\n\n💡 {quiz_data['explanation']}", reply_markup=permanent_keyboard(message.from_user.id))
+                else:
+                    bot.reply_to(message, f"❌ للأسف إجابة غير صحيحة يا {user_name}. الإجابة الصائبة هي ({correct}).\n\n💡 {quiz_data['explanation']}", reply_markup=permanent_keyboard(message.from_user.id))
+                del USER_QUIZ_STATE[chat_id]
+                return
+            else:
+                del USER_QUIZ_STATE[chat_id]
 
     # استجابات الأزرار الثابتة
     if "تغيير لغة" in text or "لغة" in text or "لغات" in text:
@@ -1382,8 +1445,23 @@ def handle_smart_media_to_word(message):
             media_obj = message.video if message.content_type == 'video' else message.video_note
             media_name = "مقطع_مرئي"
         elif message.content_type == 'document':
+            mime = (getattr(message.document, 'mime_type', '') or '').lower()
+            fname = (getattr(message.document, 'file_name', '') or '').lower()
+            valid_exts = ('.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.opus', '.wma', '.mp4', '.mkv', '.avi', '.mov', '.webm', '.3gp')
+            is_valid_audio_video = mime.startswith('audio/') or mime.startswith('video/') or any(fname.endswith(ext) for ext in valid_exts)
+            
+            if not is_valid_audio_video:
+                bot.reply_to(
+                    message,
+                    f"📄 **استلمتُ ملف مستند ({message.document.file_name or 'مستند'}) يا {user_name}.**\n\n"
+                    "⚠️ **تنبيه:** محرك التفريغ الأكاديمي مخصص فقط للملفات الصوتية ومقاطع الفيديو المسجلة.\n\n"
+                    "💡 *يرجى إرسال تسجيل صوتي (بصمة صوتية Voice Note) أو ملف صوتي/مرئي بصيغ (MP3, WAV, OGG, M4A, MP4) وسأتولى تفريغه فوراً!*",
+                    parse_mode="Markdown",
+                    reply_markup=permanent_keyboard(message.from_user.id)
+                )
+                return
             media_obj = message.document
-            media_name = message.document.file_name if message.document.file_name else "مستند"
+            media_name = message.document.file_name if message.document.file_name else "ملف_صوتي"
 
         # 🛑 الفحص لحجم الملف (الحد الأقصى المطلق في تيليجرام: 2000 ميغابايت / 2 جيجابايت!)
         file_size = getattr(media_obj, 'file_size', 0) or 0
