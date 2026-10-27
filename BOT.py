@@ -459,53 +459,89 @@ ISLAMIC_KNOWLEDGE_BASE = {
 # 🌐 محرك الترجمة الفورية المتعدد الشامل
 # ==========================================
 def smart_multi_translate(query_text, target_lang='ar'):
-    """محرك ترجمة ثلاثي ذكي لا ينقطع ولا يتأثر بالحظر"""
+    """محرك ترجمة رباعي خارق معتمد على MyMemory و Google Clients5 و Lingva لا ينقطع أبداً"""
     query_clean = query_text.strip()
     if not query_clean:
         return ""
-        
-    # 1. المحرك الأول: Google Translate Service المباشر
-    try:
-        import urllib.request
-        import urllib.parse
-        import json
-        t_code = target_lang.lower().strip()
-        url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=" + t_code + "&dt=t&q=" + urllib.parse.quote(query_clean)
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        with urllib.request.urlopen(req, timeout=7) as res:
-            data = json.loads(res.read().decode('utf-8'))
-            if data and data[0]:
-                translated = ''.join(chunk[0] for chunk in data[0] if chunk and chunk[0])
-                if translated and translated.strip():
-                    return translated.strip()
-    except Exception as e_gtx:
-        print("GTX translation notice:", e_gtx)
 
-    # 2. المحرك الثاني: الذكاء الاصطناعي Gemini (إذا توفر المفتاح)
+    import urllib.request
+    import urllib.parse
+    import json
+    import html
+
+    # تحديد لغة المصدر تلقائياً
+    has_arabic = any('\u0600' <= char <= '\u06FF' for char in query_clean)
+    src_lang = 'ar' if has_arabic else 'en'
+    if src_lang == target_lang:
+        target_lang = 'en' if has_arabic else 'ar'
+
+    # 1. المحرك الأول: MyMemory API الرسمي (مفتوح ولا يحظر خوادم السحاب إطلاقاً)
+    try:
+        encoded_q = urllib.parse.quote(query_clean)
+        url = f"https://api.mymemory.translated.net/get?q={encoded_q}&langpair={src_lang}|{target_lang}&de=mudawina_ikram@gmail.com"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        with urllib.request.urlopen(req, timeout=6) as res:
+            data = json.loads(res.read().decode('utf-8'))
+            t_text = data.get("responseData", {}).get("translatedText")
+            if t_text and t_text.strip() and t_text.strip().lower() != query_clean.lower():
+                return html.unescape(t_text.strip())
+    except Exception as e_mymem:
+        print("MyMemory translation notice:", e_mymem)
+
+    # 2. المحرك الثاني: Google Chrome Extension API (سريع ومباشر)
+    try:
+        url = f"https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl={target_lang}&q=" + urllib.parse.quote(query_clean)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        with urllib.request.urlopen(req, timeout=6) as res:
+            data = json.loads(res.read().decode('utf-8'))
+            if isinstance(data, list) and data:
+                if isinstance(data[0], str) and data[0].strip() and data[0].strip().lower() != query_clean.lower():
+                    return data[0].strip()
+                elif isinstance(data[0], list) and data[0] and isinstance(data[0][0], str) and data[0][0].strip().lower() != query_clean.lower():
+                    return data[0][0].strip()
+            elif isinstance(data, str) and data.strip() and data.strip().lower() != query_clean.lower():
+                return data.strip()
+    except Exception as e_c5:
+        print("Clients5 translation notice:", e_c5)
+
+    # 3. المحرك الثالث: Lingva Open API
+    try:
+        url = f"https://lingva.ml/api/v1/{src_lang}/{target_lang}/" + urllib.parse.quote(query_clean)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=6) as res:
+            data = json.loads(res.read().decode('utf-8'))
+            if "translation" in data and data["translation"].strip() and data["translation"].strip().lower() != query_clean.lower():
+                return data["translation"].strip()
+    except Exception as e_lingva:
+        print("Lingva translation notice:", e_lingva)
+
+    # 4. المحرك الرابع: ذكاء Gemini الاصطناعي التوليدي (إذا توفر المفتاح)
     if GEMINI_API_KEY:
         try:
             import requests
             lang_labels = {"ar": "العربية", "en": "English", "fr": "Français", "ru": "Русский", "es": "Español", "tr": "Türkçe"}
             lang_name = lang_labels.get(target_lang, target_lang)
             g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-            prompt = "Translate the following text accurately into " + lang_name + ". Output ONLY the translated text without notes:\n\n" + query_clean
+            prompt = "Translate the following text accurately into " + lang_name + ". Output ONLY the translated text without introductory words or notes:\n\n" + query_clean
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
             res = requests.post(g_url, json=payload, timeout=8)
             if res.status_code == 200:
                 t_res = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if t_res:
+                if t_res and t_res.lower() != query_clean.lower():
                     return t_res
         except Exception as e_gem:
-            print("Gemini translate notice:", e_gem)
+            print("Gemini translation notice:", e_gem)
 
-    # 3. المحرك الثالث الاحتياطي: deep-translator
+    # 5. المحرك الخامس الاحتياطي: deep-translator
     try:
         from deep_translator import GoogleTranslator
-        return GoogleTranslator(source='auto', target=target_lang).translate(query_clean)
+        t_fallback = GoogleTranslator(source='auto', target=target_lang).translate(query_clean)
+        if t_fallback and t_fallback.strip() and t_fallback.strip().lower() != query_clean.lower():
+            return t_fallback.strip()
     except Exception as e_deep:
         print("DeepTranslator notice:", e_deep)
 
-    return query_clean
+    return "⚠️ تعذر الاتصال بمزود الترجمة حالياً، يرجى إعادة المحاولة."
 
 def get_translation_markup(cache_id):
     markup = InlineKeyboardMarkup(row_width=3)
