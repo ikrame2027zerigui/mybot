@@ -74,6 +74,8 @@ listening_language = "ar-DZ"
 ADMIN_ID = 6619712661
 USERS_DB_FILE = "bot_users.json"
 ADMIN_BROADCAST_STATE = {}
+USER_TRANSLATE_STATE = {}
+TRANSLATION_CACHE = {}
 
 def load_users():
     if os.path.exists(USERS_DB_FILE):
@@ -453,6 +455,71 @@ ISLAMIC_KNOWLEDGE_BASE = {
 # ==========================================
 # 🤖 استعلام الذكاء الاصطناعي (Gemini أو المحرك المدمج)
 # ==========================================
+# ==========================================
+# 🌐 محرك الترجمة الفورية المتعدد الشامل
+# ==========================================
+def smart_multi_translate(query_text, target_lang='ar'):
+    """محرك ترجمة ثلاثي ذكي لا ينقطع ولا يتأثر بالحظر"""
+    query_clean = query_text.strip()
+    if not query_clean:
+        return ""
+        
+    # 1. المحرك الأول: Google Translate Service المباشر
+    try:
+        import urllib.request
+        import urllib.parse
+        import json
+        t_code = target_lang.lower().strip()
+        url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=" + t_code + "&dt=t&q=" + urllib.parse.quote(query_clean)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+        with urllib.request.urlopen(req, timeout=7) as res:
+            data = json.loads(res.read().decode('utf-8'))
+            if data and data[0]:
+                translated = ''.join(chunk[0] for chunk in data[0] if chunk and chunk[0])
+                if translated and translated.strip():
+                    return translated.strip()
+    except Exception as e_gtx:
+        print("GTX translation notice:", e_gtx)
+
+    # 2. المحرك الثاني: الذكاء الاصطناعي Gemini (إذا توفر المفتاح)
+    if GEMINI_API_KEY:
+        try:
+            import requests
+            lang_labels = {"ar": "العربية", "en": "English", "fr": "Français", "ru": "Русский", "es": "Español", "tr": "Türkçe"}
+            lang_name = lang_labels.get(target_lang, target_lang)
+            g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+            prompt = "Translate the following text accurately into " + lang_name + ". Output ONLY the translated text without notes:\n\n" + query_clean
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            res = requests.post(g_url, json=payload, timeout=8)
+            if res.status_code == 200:
+                t_res = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                if t_res:
+                    return t_res
+        except Exception as e_gem:
+            print("Gemini translate notice:", e_gem)
+
+    # 3. المحرك الثالث الاحتياطي: deep-translator
+    try:
+        from deep_translator import GoogleTranslator
+        return GoogleTranslator(source='auto', target=target_lang).translate(query_clean)
+    except Exception as e_deep:
+        print("DeepTranslator notice:", e_deep)
+
+    return query_clean
+
+def get_translation_markup(cache_id):
+    markup = InlineKeyboardMarkup(row_width=3)
+    markup.add(
+        InlineKeyboardButton("🇸🇦 العربية", callback_data=f"tr_ar_{cache_id}"),
+        InlineKeyboardButton("🇬🇧 الإنجليزية", callback_data=f"tr_en_{cache_id}"),
+        InlineKeyboardButton("🇫🇷 الفرنسية", callback_data=f"tr_fr_{cache_id}"),
+        InlineKeyboardButton("🇷🇺 الروسية", callback_data=f"tr_ru_{cache_id}"),
+        InlineKeyboardButton("🇹🇷 التركية", callback_data=f"tr_tr_{cache_id}"),
+        InlineKeyboardButton("🇪🇸 الإسبانية", callback_data=f"tr_es_{cache_id}")
+    )
+    return markup
+
+
 def ask_ai_study_assistant(query, user_name="الطالب"):
     query_clean = query.strip().lower()
     
@@ -515,7 +582,7 @@ bot.set_my_commands([
     BotCommand("summary", "دليل المذاكرة السريعة 📝"),
     BotCommand("schedule", "جدول المحاضرات 📅"),
     BotCommand("set_schedule", "تعديل الجدول ✏️"),
-    BotCommand("translate", "ترجمة النصوص الأكاديمية 🌐"),
+    BotCommand("translate", "المترجم الفوري لجميع اللغات 🌐"),
     BotCommand("cancel", "إلغاء العمليات الحالية ❌"),
     BotCommand("history", "سجل الملفات 📂")
 ])
@@ -524,7 +591,8 @@ def permanent_keyboard(user_id=None):
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row(KeyboardButton("🎙️ أرسل تسجيلاً للتفريغ"), KeyboardButton("🧠 بنك الأسئلة والمراجعة الذاتية"))
     markup.row(KeyboardButton("📚 المعجم الفقهي والأصولي"), KeyboardButton("📅 جدولي الدراسي والامتحانات"))
-    markup.row(KeyboardButton("🌐 تغيير لغة التفريغ"), KeyboardButton("❌ إلغاء"))
+    markup.row(KeyboardButton("🌐 المترجم الفوري الشامل"), KeyboardButton("🌐 لغة تفريغ الصوت"))
+    markup.row(KeyboardButton("❌ إلغاء"))
     if user_id == ADMIN_ID or str(user_id) == str(ADMIN_ID):
         markup.row(KeyboardButton("👑 لوحة تحكم الإدارة والمطورة"))
     return markup
@@ -1061,6 +1129,50 @@ def start_quiz(message):
 # ==========================================
 # 📚 المعجم الفقهي والأصولي التفاعلي السريع
 # ==========================================
+# ==========================================
+# 🌐 الاستجابة التفاعلية لتغيير لغة الترجمة
+# ==========================================
+@bot.callback_query_handler(func=lambda call: call.data.startswith('tr_'))
+def handle_translation_language_choice(call):
+    parts = call.data.split('_')
+    if len(parts) >= 3:
+        target_lang = parts[1]
+        cache_id = parts[2]
+        original_text = TRANSLATION_CACHE.get(cache_id)
+        if not original_text:
+            bot.answer_callback_query(call.id, "انتهت جلسة هذه الترجمة. اكتب النص مجدداً وسيترجم فوراً.")
+            return
+
+        lang_names = {
+            "ar": "العربية 🇸🇦",
+            "en": "الإنجليزية 🇬🇧",
+            "fr": "الفرنسية 🇫🇷",
+            "ru": "الروسية 🇷🇺",
+            "tr": "التركية 🇹🇷",
+            "es": "الإسبانية 🇪🇸"
+        }
+        target_display = lang_names.get(target_lang, target_lang)
+        bot.answer_callback_query(call.id, f"جاري الترجمة إلى {target_display}...")
+        
+        translated = smart_multi_translate(original_text, target_lang=target_lang)
+        msg_text = (
+            f"🌐 **الترجمة الفورية إلى {target_display}:**\n\n"
+            f"«{translated}»\n\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"💡 *اضغطي على أي لغة أدناه لتحويل نفس النص إليها فوراً:*"
+        )
+        try:
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=msg_text,
+                parse_mode="Markdown",
+                reply_markup=get_translation_markup(cache_id)
+            )
+        except Exception:
+            pass
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('dict_'))
 def handle_dictionary_callback(call):
     topic = call.data.split('_')[1]
@@ -1344,8 +1456,79 @@ def handle_personalized_text(message):
     text_lower = text.lower()
 
     if "إلغاء" in text_lower or text_lower == "cancel":
+        if chat_id in USER_TRANSLATE_STATE:
+            del USER_TRANSLATE_STATE[chat_id]
         cancel_operation(message)
         return
+
+    # 1. زر تنشيط المترجم الفوري الشامل
+    if "المترجم الفوري" in text or text == "ترجمة" or "مترجم" in text:
+        USER_TRANSLATE_STATE[chat_id] = True
+        if chat_id in USER_QUIZ_STATE:
+            del USER_QUIZ_STATE[chat_id]
+        bot.reply_to(
+            message,
+            f"🌐 **المترجم الأكاديمي الفوري لجميع اللغات يا {user_name}:**\n\n"
+            "✏️ **تفضلي بكتابة أي جملة أو كلمة أو فقرة الآن مباشرة في الشات:**\n"
+            "(سواء كانت بالعربية، الإنجليزية، الفرنسية، الروسية أو غيرها)\n\n"
+            "✨ وسيقوم البوت بترجمتها فوراً مع إمكانية تحويلها لأي لغة ترغبين بها بضغطة زر واحدة! 🌍",
+            parse_mode="Markdown",
+            reply_markup=permanent_keyboard(message.from_user.id)
+        )
+        return
+
+    # 2. إذا كانت الطالبة داخل وضع المترجم الفوري الشامل وكتبت نصاً
+    if USER_TRANSLATE_STATE.get(chat_id):
+        # فحص إن ضغطت على زر من الأزرار الأخرى للخروج من وضع الترجمة
+        is_other_btn = any(btn in text for btn in [
+            "أرسل تسجيلاً", "تفريغ", "بنك الأسئلة", "المراجعة الذاتية", "مسابقة",
+            "معجم", "المعجم", "جدول", "الامتحانات", "لغة تفريغ", "تغيير لغة", "لوحة تحكم"
+        ])
+        if is_other_btn:
+            del USER_TRANSLATE_STATE[chat_id]
+        else:
+            # ترجمة النص فوراً!
+            # إذا كان النص يحتوي على أحرف عربية -> نترجم للإنجليزية، وإلا إلى العربية
+            has_arabic = any('\u0600' <= char <= '\u06FF' for char in text)
+            target = "en" if has_arabic else "ar"
+            target_title = "الإنجليزية 🇬🇧" if has_arabic else "العربية 🇸🇦"
+            
+            translated = smart_multi_translate(text, target_lang=target)
+            cache_id = str(int(time.time()))[-6:]
+            TRANSLATION_CACHE[cache_id] = text
+            
+            res_msg = (
+                f"🌐 **الترجمة الفورية إلى {target_title}:**\n\n"
+                f"«{translated}»\n\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"💡 *اضغطي على أي لغة أدناه لتحويل الترجمة إليها فوراً:*\n"
+                f"*(يمكنكِ كتابة أي جملة أخرى مباشرة وسيترجمها فوراً)*"
+            )
+            bot.reply_to(message, res_msg, parse_mode="Markdown", reply_markup=get_translation_markup(cache_id))
+            return
+
+    # 3. الترجمة المباشرة التلقائية إذا بدأت الجملة بـ 'ترجم' أو 'ترجمة'
+    if text.startswith("ترجم ") or text.startswith("ترجم:") or text.startswith("ترجمة:") or text.startswith("ترجم لي"):
+        clean_text = text
+        for prefix in ["ترجم لي:", "ترجم لي ", "ترجمة:", "ترجم:", "ترجم "]:
+            if clean_text.startswith(prefix):
+                clean_text = clean_text[len(prefix):].strip()
+                break
+        if clean_text:
+            has_arabic = any('\u0600' <= char <= '\u06FF' for char in clean_text)
+            target = "en" if has_arabic else "ar"
+            target_title = "الإنجليزية 🇬🇧" if has_arabic else "العربية 🇸🇦"
+            translated = smart_multi_translate(clean_text, target_lang=target)
+            cache_id = str(int(time.time()))[-6:]
+            TRANSLATION_CACHE[cache_id] = clean_text
+            res_msg = (
+                f"🌐 **الترجمة الفورية إلى {target_title}:**\n\n"
+                f"«{translated}»\n\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"💡 *اضغطي على أي لغة أدناه لتحويل الترجمة إليها فوراً:*"
+            )
+            bot.reply_to(message, res_msg, parse_mode="Markdown", reply_markup=get_translation_markup(cache_id))
+            return
 
     # فحص إجابة الكويز إذا كان الطالب في وضع اختبار
     if chat_id in USER_QUIZ_STATE:
