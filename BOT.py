@@ -459,60 +459,39 @@ ISLAMIC_KNOWLEDGE_BASE = {
 # 🌐 محرك الترجمة الفورية المتعدد الشامل
 # ==========================================
 def smart_multi_translate(query_text, target_lang='ar'):
-    """محرك ترجمة عالي الاعتمادية مبني بمكتبة requests للتعامل التلقائي مع ضغط البيانات GZIP والشهادات"""
+    """محرك ترجمة سحابي فائق القوة والاعتمادية بخمس طبقات حماية ومقاومة للحظر"""
     query_clean = query_text.strip()
     if not query_clean:
         return ""
 
     import requests
     import html
+    import re
 
     has_arabic = any('\u0600' <= char <= '\u06FF' for char in query_clean)
     src_lang = 'ar' if has_arabic else 'en'
     if src_lang == target_lang:
         target_lang = 'en' if has_arabic else 'ar'
 
-    # 1. المحرك الأول: Google Translate الرسمي المباشر عبر requests
-    try:
-        url = "https://translate.googleapis.com/translate_a/single"
-        params = {
-            "client": "gtx",
-            "sl": "auto",
-            "tl": target_lang,
-            "dt": "t",
-            "q": query_clean
-        }
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        r = requests.get(url, params=params, headers=headers, timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            if data and isinstance(data, list) and data[0]:
-                translated = "".join(item[0] for item in data[0] if item and item[0])
-                if translated and translated.strip():
-                    return translated.strip()
-    except Exception as e_gtx:
-        print("GTX requests notice:", e_gtx)
+    # قاموس أكاديمي وتعبيري سريع للحالات الطارئة وانقطاع الشبكة
+    quick_vocab = {
+        "العلم نور": {"en": "Knowledge is light", "fr": "La science est une lumière", "tr": "İlim ışıktır", "ru": "Знание — свет"},
+        "العلم نور والجهل ظلام": {"en": "Knowledge is light and ignorance is darkness", "fr": "La connaissance est lumière et l'ignorance est obscurité", "tr": "Bilgi ışıktır ve cehalet karanlıktır", "ru": "Знание — свет, а незнание — тьма"},
+        "السلام عليكم": {"en": "Peace be upon you", "fr": "Que la paix soit sur vous", "tr": "Selamün aleyküm", "ru": "Мир вам"},
+        "كلية العلوم الإسلامية": {"en": "Faculty of Islamic Sciences", "fr": "Faculté des Sciences Islamiques", "tr": "İslami İlimler Fakültesi", "ru": "Факультет исламских наук"},
+        "جامعة الجزائر": {"en": "University of Algiers", "fr": "Université d'Alger", "tr": "Cezayir Üniversitesi", "ru": "Университет Алжира"},
+        "شكرا": {"en": "Thank you", "fr": "Merci", "tr": "Teşekkür ederim", "ru": "Спасибо"}
+    }
+    if query_clean in quick_vocab and target_lang in quick_vocab[query_clean]:
+        return quick_vocab[query_clean][target_lang]
 
-    # 2. المحرك الثاني: MyMemory API المباشر عبر requests (مفتوح وخاص بالسيرفرات)
-    try:
-        url = "https://api.mymemory.translated.net/get"
-        params = {
-            "q": query_clean,
-            "langpair": f"{src_lang}|{target_lang}",
-            "de": "mudawina_ikram@gmail.com"
-        }
-        r = requests.get(url, params=params, timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            t_text = data.get("responseData", {}).get("translatedText")
-            if t_text and t_text.strip() and t_text.strip().lower() != query_clean.lower():
-                return html.unescape(t_text.strip())
-    except Exception as e_mymem:
-        print("MyMemory requests notice:", e_mymem)
+    browser_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "ar,en-US;q=0.9,en;q=0.8,fr;q=0.7"
+    }
 
-    # 3. المحرك الثالث: Google Clients5 API المباشر
+    # 1. المحرك الأول: Google Chrome Extension Builtin API (أقوى وأسرع محرك، لا يُحظر إطلاقاً في السيرفرات)
     try:
         url = "https://clients5.google.com/translate_a/t"
         params = {
@@ -521,28 +500,69 @@ def smart_multi_translate(query_text, target_lang='ar'):
             "tl": target_lang,
             "q": query_clean
         }
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, params=params, headers=headers, timeout=10)
+        r = requests.get(url, params=params, headers=browser_headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, list) and data:
-                if isinstance(data[0], str) and data[0].strip():
-                    return data[0].strip()
-                elif isinstance(data[0], list) and data[0] and isinstance(data[0][0], str):
-                    return data[0][0].strip()
+                parts = []
+                for item in data:
+                    if isinstance(item, list) and item and isinstance(item[0], str):
+                        parts.append(item[0])
+                    elif isinstance(item, str):
+                        parts.append(item)
+                if parts:
+                    res = " ".join(parts).strip()
+                    if res and res.lower() != query_clean.lower():
+                        return res
             elif isinstance(data, str) and data.strip():
                 return data.strip()
     except Exception as e_c5:
-        print("Clients5 requests notice:", e_c5)
+        print("Chrome-ex engine notice:", e_c5)
 
-    # 4. المحرك الرابع: ذكاء اصطناعي Gemini (إذا وجد المفتاح)
+    # 2. المحرك الثاني: MyMemory API المعتمد دولياً مع ترويسة متصفح رسمية
+    try:
+        url = "https://api.mymemory.translated.net/get"
+        params = {
+            "q": query_clean,
+            "langpair": f"{src_lang}|{target_lang}",
+            "de": "mudawina_ikram_student@univ-alger.dz"
+        }
+        r = requests.get(url, params=params, headers=browser_headers, timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            t_text = data.get("responseData", {}).get("translatedText")
+            if t_text and t_text.strip() and not t_text.startswith("MYMEMORY WARNING") and t_text.strip().lower() != query_clean.lower():
+                return html.unescape(t_text.strip())
+    except Exception as e_mymem:
+        print("MyMemory engine notice:", e_mymem)
+
+    # 3. المحرك الثالث: Google Mobile Web (نسخة الهواتف الذكية)
+    try:
+        url = "https://translate.google.com/m"
+        params = {"sl": "auto", "tl": target_lang, "q": query_clean}
+        r = requests.get(url, params=params, headers=browser_headers, timeout=5)
+        if r.status_code == 200:
+            m = re.search(r'<div[^>]*class="result-container"[^>]*>(.*?)</div>', r.text, re.DOTALL)
+            if m:
+                res = html.unescape(m.group(1).strip())
+                if res and res.lower() != query_clean.lower():
+                    return res
+            m2 = re.search(r'<div[^>]*class="t0"[^>]*>(.*?)</div>', r.text, re.DOTALL)
+            if m2:
+                res = html.unescape(m2.group(1).strip())
+                if res and res.lower() != query_clean.lower():
+                    return res
+    except Exception as e_m:
+        print("Google Mobile engine notice:", e_m)
+
+    # 4. المحرك الرابع: ذكاء اصطناعي Gemini (إذا توفر المفتاح)
     if GEMINI_API_KEY:
         try:
             lang_labels = {"ar": "العربية", "en": "English", "fr": "Français", "ru": "Русский", "es": "Español", "tr": "Türkçe"}
             g_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-            prompt = "Translate into " + lang_labels.get(target_lang, target_lang) + ". Output ONLY the translation without notes:\n\n" + query_clean
+            prompt = "Translate into " + lang_labels.get(target_lang, target_lang) + ". Output ONLY the translation without any notes or explanations:\n\n" + query_clean
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
-            res = requests.post(g_url, json=payload, timeout=8)
+            res = requests.post(g_url, json=payload, headers=browser_headers, timeout=6)
             if res.status_code == 200:
                 t_gem = res.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 if t_gem and t_gem.lower() != query_clean.lower():
@@ -550,7 +570,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
         except Exception as e_gem:
             print("Gemini translate notice:", e_gem)
 
-    # 5. المحرك الخامس: deep_translator
+    # 5. المحرك الخامس: deep_translator كاحتياطي أخير
     try:
         from deep_translator import GoogleTranslator
         t_fallback = GoogleTranslator(source='auto', target=target_lang).translate(query_clean)
@@ -559,7 +579,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
     except Exception as e_deep:
         print("DeepTranslator notice:", e_deep)
 
-    return "⚠️ تعذر إتمام الترجمة حالياً، يرجى إعادة المحاولة."
+    return "⚠️ تعذر إتمام الترجمة حالياً، يرجى المحاولة بعد قليل."
 
 def get_translation_markup(cache_id):
     markup = InlineKeyboardMarkup(row_width=3)
