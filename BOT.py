@@ -5,6 +5,7 @@ import time
 import random
 import subprocess
 import re
+import shutil
 from datetime import datetime
 import telebot
 from telebot.types import (
@@ -12,6 +13,7 @@ from telebot.types import (
     ReplyKeyboardMarkup, KeyboardButton, BotCommand
 )
 import speech_recognition as sr
+from pydub import AudioSegment
 from deep_translator import GoogleTranslator
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
@@ -73,7 +75,11 @@ def init_local_telegram_bot_api():
         except Exception as e:
             print("Local bot api notice:", e)
 
-init_local_telegram_bot_api()
+USE_LOCAL_TG_API = os.environ.get("USE_LOCAL_TG_API", "false").lower() == "true"
+if USE_LOCAL_TG_API:
+    init_local_telegram_bot_api()
+else:
+    print("✅ استخدام خادم Telegram Cloud API الرسمي المباشر والمستقر لجميع الملفات الصوتية حتى 20MB.")
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
@@ -969,71 +975,128 @@ def smart_arabic_stt_corrector(text):
     return res
 
 # ==========================================
-# ⚡ معالج الصوتيات المطور للمقاطع الطويلة (ساعة وساعتين)
+# ⚡ معالج الصوتيات فائق السرعة والدقة (فوري للبصمات + تقطيع للمحاضرات)
 # ==========================================
 def process_audio_streaming(input_filepath, progress_callback=None):
     """
-    تقطيع وتفريغ المقاطع الصوتية الطويلة ومسجلات الهواتف بحماية فائقة ضد الانقطاع
-    دون استهلاك الذاكرة (RAM) وبأعلى جودة ممكنة.
+    تفريغ صوتي فائق السرعة والدقة:
+    1. المقاطع القصيرة والبصمات الصوتية (أقل من 90 ثانية): تفريغ مباشر وفوري في ثوانٍ معدودة عبر Pydub.
+    2. المحاضرات الطويلة (أكثر من 90 ثانية): تقطيع ذكي مع شريط تقدم.
     """
-    session_id = f"st_{int(time.time())}_{random.randint(100, 999)}"
-    output_pattern = f"{session_id}_%04d.wav"
+    global listening_language
     
-    # أمر ffmpeg المقاوم لخلل مسجلات الهواتف والترميزات المختلفة
+    # 1. محاولة قراءة الصوت عبر Pydub
+    sound = None
+    try:
+        sound = AudioSegment.from_file(input_filepath)
+        sound = sound.set_channels(1).set_frame_rate(16000)
+    except Exception as e_pydub:
+        print("Pydub load notice:", e_pydub)
+
+    duration_sec = sound.duration_seconds if sound else 0
+    session_id = f"st_{int(time.time())}_{random.randint(100, 999)}"
+
+    # للمقاطع العادية والبصمات الصوتية (أقل من دقيقة ونصف): تفريغ فوري وسريع في 2-3 ثوانٍ!
+    if sound and duration_sec <= 90:
+        fast_wav = f"{session_id}_fast.wav"
+        try:
+            sound.export(fast_wav, format="wav")
+            with sr.AudioFile(fast_wav) as source:
+                audio_data = recognizer.record(source)
+                text = recognizer.recognize_google(audio_data, language=listening_language)
+                if text and text.strip():
+                    if listening_language.startswith("ar"):
+                        return smart_arabic_stt_corrector(text.strip())
+                    return text.strip()
+        except sr.UnknownValueError:
+            return ""
+        except Exception as ex_fast:
+            print("Fast STT notice:", ex_fast)
+        finally:
+            if os.path.exists(fast_wav):
+                try:
+                    os.remove(fast_wav)
+                except Exception:
+                    pass
+
+    # للمحاضرات الطويلة (أكثر من 90 ثانية): تقطيع سلس وتفريغ متتابع
+    chunk_texts = []
+
+    if sound and duration_sec > 90:
+        chunk_ms = 45 * 1000
+        total_chunks = int(len(sound) / chunk_ms) + (1 if len(sound) % chunk_ms else 0)
+        last_cb = 0
+
+        for idx, start_ms in enumerate(range(0, len(sound), chunk_ms)):
+            chunk = sound[start_ms:start_ms + chunk_ms]
+            chunk_wav = f"{session_id}_{idx}.wav"
+            try:
+                chunk.export(chunk_wav, format="wav")
+                with sr.AudioFile(chunk_wav) as source:
+                    audio_data = recognizer.record(source)
+                    part = recognizer.recognize_google(audio_data, language=listening_language)
+                    if part and part.strip():
+                        chunk_texts.append(part.strip())
+            except Exception as ex_c:
+                print(f"Chunk {idx} notice:", ex_c)
+            finally:
+                if os.path.exists(chunk_wav):
+                    try:
+                        os.remove(chunk_wav)
+                    except Exception:
+                        pass
+
+            if progress_callback and (time.time() - last_cb > 6 or idx == total_chunks - 1):
+                progress_callback(idx + 1, total_chunks)
+                last_cb = time.time()
+
+        raw_out = " ".join(chunk_texts)
+        if raw_out.strip():
+            if listening_language.startswith("ar"):
+                return smart_arabic_stt_corrector(raw_out)
+            return raw_out
+
+    # محرك FFmpeg الاحتياطي في حال تعذر Pydub
     cmd = [
         "ffmpeg", "-y", "-err_detect", "ignore_err",
         "-i", input_filepath,
         "-vn", "-sn", "-dn",
         "-f", "segment", "-segment_time", "45",
         "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1",
-        output_pattern
+        f"{session_id}_%04d.wav"
     ]
-    
     try:
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
         print("FFmpeg segment notice:", e)
-        
+
     chunk_files = sorted(glob.glob(f"{session_id}_*.wav"))
-    
-    # إذا تعذر التقطيع، نجرب التحويل المباشر كملف واحد كحل بديل
     if not chunk_files:
         fallback_wav = f"{session_id}_single.wav"
-        cmd_fallback = [
-            "ffmpeg", "-y", "-err_detect", "ignore_err",
-            "-i", input_filepath,
-            "-vn", "-sn", "-dn",
-            "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1",
-            fallback_wav
-        ]
         try:
-            subprocess.run(cmd_fallback, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run([
+                "ffmpeg", "-y", "-err_detect", "ignore_err",
+                "-i", input_filepath,
+                "-vn", "-sn", "-dn",
+                "-c:a", "pcm_s16le", "-ar", "16000", "-ac", "1",
+                fallback_wav
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if os.path.exists(fallback_wav):
                 chunk_files = [fallback_wav]
         except Exception:
             pass
 
     total_chunks = len(chunk_files)
-    transcribed_text = []
-    last_callback_time = 0
-
+    last_cb = 0
     for idx, chunk_file in enumerate(chunk_files):
         try:
             with sr.AudioFile(chunk_file) as source:
                 audio_data = recognizer.record(source)
-                for attempt in range(2):
-                    try:
-                        part = recognizer.recognize_google(audio_data, language=listening_language)
-                        if part:
-                            transcribed_text.append(part.strip())
-                        break
-                    except sr.UnknownValueError:
-                        break
-                    except Exception:
-                        if attempt == 0:
-                            time.sleep(0.5)
-        except Exception as ex:
-            print(f"Chunk processing notice [{idx}]: {ex}")
+                part = recognizer.recognize_google(audio_data, language=listening_language)
+                if part and part.strip():
+                    chunk_texts.append(part.strip())
+        except Exception:
+            pass
         finally:
             if os.path.exists(chunk_file):
                 try:
@@ -1041,12 +1104,11 @@ def process_audio_streaming(input_filepath, progress_callback=None):
                 except Exception:
                     pass
 
-        current_time = time.time()
-        if progress_callback and (current_time - last_callback_time > 8 or idx == total_chunks - 1):
+        if progress_callback and (time.time() - last_cb > 6 or idx == total_chunks - 1):
             progress_callback(idx + 1, total_chunks)
-            last_callback_time = current_time
+            last_cb = time.time()
 
-    raw_text_out = " ".join(transcribed_text)
+    raw_text_out = " ".join(chunk_texts)
     if listening_language.startswith("ar"):
         return smart_arabic_stt_corrector(raw_text_out)
     return raw_text_out
@@ -1723,6 +1785,10 @@ def handle_smart_media_to_word(message):
     output_docx = f"محاضرة_{user_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
     output_txt = output_docx.replace(".docx", ".txt")
 
+    # إلغاء أي حالة ترجمة أو كويز سابقة عند إرسال ملف صوتي
+    USER_TRANSLATE_STATE.pop(message.chat.id, None)
+    USER_QUIZ_STATE.pop(message.chat.id, None)
+
     try:
         # تحديد الملف وحجمه
         media_obj = None
@@ -1771,34 +1837,51 @@ def handle_smart_media_to_word(message):
         if file_size > 20 * 1024 * 1024:
             working_msg = bot.reply_to(
                 message,
-                f"⏳ **يا {user_name}، تم استلام ملف المحاضرة الكبير ({size_mb} ميغابايت). جاري التحميل المباشر فائق السرعة عبر MTProto والبدء في التفريغ...** 🌿",
+                f"⏳ **يا {user_name}، تم استلام ملف المحاضرة الكبير ({size_mb} ميغابايت). جاري التحميل والبدء في التفريغ...** 🌿",
                 parse_mode="Markdown",
                 reply_markup=permanent_keyboard(message.from_user.id)
             )
         else:
             working_msg = bot.reply_to(
                 message,
-                f"⏳ **يا {user_name}، جاري استلام ملف المحاضرة والبدء في تفريغه...** 🌿",
+                f"⏳ **يا {user_name}، جاري استلام التسجيل وتفريغه فوراً...** 🌿",
                 parse_mode="Markdown",
                 reply_markup=permanent_keyboard(message.from_user.id)
             )
 
-        # تحميل الملف من تيليجرام بنظام التحميل الشامل حتى 2000 ميغابايت (2GB)
+        # تحميل الملف من تيليجرام بنظام متعدد الحماية
         download_success = False
 
         try:
             file_info = bot.get_file(media_obj.file_id)
+            file_path = file_info.file_path
             
-            # إذا كان الخادم المحلي يعمل بتقنية --local فإن الملف يكون موجوداً بالفعل في المسار المحلي
-            if file_info.file_path and os.path.exists(file_info.file_path):
-                shutil.copy(file_info.file_path, temp_input)
+            # 1. إذا كان الملف موجوداً محلياً على القرص (سيرفر تيليجرام المحلي)
+            if file_path and os.path.exists(file_path):
+                shutil.copy(file_path, temp_input)
                 download_success = True
             else:
-                downloaded_file = bot.download_file(file_info.file_path)
-                with open(temp_input, 'wb') as f:
-                    f.write(downloaded_file)
-                if os.path.exists(temp_input) and os.path.getsize(temp_input) > 0:
-                    download_success = True
+                # 2. التحميل القياسي المباشر عبر تيليجرام
+                try:
+                    downloaded_file = bot.download_file(file_path)
+                    with open(temp_input, 'wb') as f:
+                        f.write(downloaded_file)
+                    if os.path.exists(temp_input) and os.path.getsize(temp_input) > 0:
+                        download_success = True
+                except Exception as ex_down1:
+                    print("Download standard notice:", ex_down1)
+
+                # 3. التحميل الاحتياطي المباشر عبر HTTPS الرسمي
+                if not download_success and file_path:
+                    try:
+                        direct_url = f"https://api.telegram.org/file/bot{TOKEN}/{file_path}"
+                        res = requests.get(direct_url, timeout=35)
+                        if res.status_code == 200 and len(res.content) > 0:
+                            with open(temp_input, 'wb') as f:
+                                f.write(res.content)
+                            download_success = True
+                    except Exception as ex_direct:
+                        print("Download direct notice:", ex_direct)
         except Exception as ex_down:
             print("Download notice:", ex_down)
 
@@ -1815,7 +1898,7 @@ def handle_smart_media_to_word(message):
                 bot.send_message(message.chat.id, err_text)
             return
 
-        # دالة رد النداء لتحديث شريط التقدم للطالب
+        # دالة رد النداء لتحديث شريط التقدم للطالب للمقاطع الطويلة
         def update_progress(current, total):
             try:
                 percent = int((current / total) * 100)
@@ -1835,7 +1918,7 @@ def handle_smart_media_to_word(message):
             except Exception:
                 pass
 
-        # تفريغ المقطع بنظام التدفق المنخفض للذاكرة
+        # تفريغ المقطع بنظام السرعة العالية
         raw_text = process_audio_streaming(temp_input, progress_callback=update_progress)
 
         if raw_text and raw_text.strip():
@@ -1847,21 +1930,17 @@ def handle_smart_media_to_word(message):
             except Exception:
                 pass
 
-            # 1. إنشاء مستند Word الأكاديمي المنسق
-            create_word_document(raw_text, user_name, output_docx)
-            # 2. إنشاء الملف النصي الخفيف
-            create_text_document(raw_text, user_name, output_txt)
-
-            # 3. إرسال ملخص / تفريغ مباشر في رسالة تيليجرام
             words_count = len(raw_text.split())
-            if words_count <= 200:
+
+            # إرسال التفريغ النصي المباشر فوراً في الشات
+            if words_count <= 250:
                 chat_msg = (
                     f"🎙️ **تفريغ التسجيل الصوتي كاملاً يا {user_name}:**\n\n"
-                    f"«{raw_text.strip()}»\n\n"
-                    f"📄 تم إرفاق مستند Word والملف النصي أدناه للمراجعة والطباعة ⬇️"
+                    f"«{raw_text.strip()}»"
                 )
+                bot.send_message(message.chat.id, chat_msg, parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
             else:
-                preview = " ".join(raw_text.split()[:60]) + "..."
+                preview = " ".join(raw_text.split()[:80]) + "..."
                 chat_msg = (
                     f"🎓 **تم تفريغ المحاضرة وتنظيمها بنجاح يا {user_name}!** 🌿\n\n"
                     f"📊 **إحصائيات المحاضرة:** عدد الكلمات: `{words_count}` كلمة تقريباً.\n"
@@ -1869,30 +1948,36 @@ def handle_smart_media_to_word(message):
                     f"📖 **مقتطف من بداية المحاضرة:**\n«{preview}»\n\n"
                     f"👇 **تجدين أدناه مستند Word الأكاديمي المنسق + النسخة النصية الكاملة:**"
                 )
+                bot.send_message(message.chat.id, chat_msg, parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
 
-            bot.send_message(message.chat.id, chat_msg, parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
+            # إنشاء وإرسال مستند Word والملف النصي للمحاضرات
+            if words_count > 30:
+                try:
+                    create_word_document(raw_text, user_name, output_docx)
+                    create_text_document(raw_text, user_name, output_txt)
 
-            # إرسال مستند Word المنسق
-            with open(output_docx, "rb") as doc_to_send:
-                bot.send_document(
-                    message.chat.id,
-                    doc_to_send,
-                    caption="📄 **مستند Word الأكاديمي المنسق** (محاور وعناوين وأسئلة امتحان) ✨",
-                    parse_mode="Markdown"
-                )
-
-            # إرسال الملف النصي الخفيف
-            with open(output_txt, "rb") as txt_to_send:
-                bot.send_document(
-                    message.chat.id,
-                    txt_to_send,
-                    caption="📝 **نسخة نصية خفيفة كاملة (.txt)** لسهولة القراءة والنسخ على أي هاتف 🌿",
-                    parse_mode="Markdown",
-                    reply_markup=permanent_keyboard(message.from_user.id)
-                )
+                    if os.path.exists(output_docx):
+                        with open(output_docx, "rb") as doc_to_send:
+                            bot.send_document(
+                                message.chat.id,
+                                doc_to_send,
+                                caption="📄 **مستند Word الأكاديمي المنسق** ✨",
+                                parse_mode="Markdown"
+                            )
+                    if os.path.exists(output_txt):
+                        with open(output_txt, "rb") as txt_to_send:
+                            bot.send_document(
+                                message.chat.id,
+                                txt_to_send,
+                                caption="📝 **نسخة نصية خفيفة (.txt)** 🌿",
+                                parse_mode="Markdown",
+                                reply_markup=permanent_keyboard(message.from_user.id)
+                            )
+                except Exception as ex_doc:
+                    print("Document generation error:", ex_doc)
         else:
             bot.edit_message_text(
-                f"⚠️ عذراً يا {user_name}، لم يتم العثور على كلام واضح داخل هذا المقطع الصوتي.",
+                f"⚠️ عذراً يا {user_name}، لم يتم العثور على كلام واضح داخل هذا المقطع الصوتي. يرجى التأكد من وضوح الصوت وإعادة المحاولة.",
                 chat_id=message.chat.id,
                 message_id=working_msg.message_id
             )
