@@ -799,26 +799,35 @@ def ask_ai_study_assistant(query, user_name="الطالب"):
 # 🎛️ القوائم ولوحات التحكم
 # ==========================================
 bot.set_my_commands([
-    BotCommand("start", "تشغيل البوت 🌟"),
-    BotCommand("help", "دليل الاستخدام 📚"),
-    BotCommand("quiz", "بنك الأسئلة والمراجعة الذاتية 🧠"),
-    BotCommand("dictionary", "المعجم الفقهي والأصولي 📚"),
-    BotCommand("summary", "دليل المذاكرة السريعة 📝"),
-    BotCommand("schedule", "جدول المحاضرات 📅"),
-    BotCommand("set_schedule", "تعديل الجدول ✏️"),
-    BotCommand("translate", "المترجم الفوري لجميع اللغات 🌐"),
-    BotCommand("cancel", "إلغاء العمليات الحالية ❌"),
-    BotCommand("history", "سجل الملفات 📂")
+    BotCommand("start", "🟢 تشغيل البوت والترحيب 🌿"),
+    BotCommand("quiz", "🟣 بنك الأسئلة والمراجعة 🧠"),
+    BotCommand("dictionary", "🟡 المعجم الفقهي والأصولي 📚"),
+    BotCommand("translate", "🔵 المترجم الفوري الشامل 🌐"),
+    BotCommand("schedule", "🟠 جدول المحاضرات والامتحانات 📅"),
+    BotCommand("summary", "💡 دليل المذاكرة السريعة 📝"),
+    BotCommand("set_schedule", "✏️ تعديل ومزامنة الجدول ⚙️"),
+    BotCommand("history", "📂 سجل ومحفوظات الملفات 📁"),
+    BotCommand("help", "📖 دليل الاستخدام والمساعدة 💡"),
+    BotCommand("cancel", "🔴 إلغاء أي عملية حالية ✖️")
 ])
 
 def permanent_keyboard(user_id=None):
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row(KeyboardButton("🎙️ أرسل تسجيلاً للتفريغ"), KeyboardButton("🧠 بنك الأسئلة والمراجعة الذاتية"))
-    markup.row(KeyboardButton("📚 المعجم الفقهي والأصولي"), KeyboardButton("📅 جدولي الدراسي والامتحانات"))
-    markup.row(KeyboardButton("🌐 المترجم الفوري الشامل"), KeyboardButton("🌐 لغة تفريغ الصوت"))
-    markup.row(KeyboardButton("❌ إلغاء"))
+    markup.row(
+        KeyboardButton("🟢 🎙️ أرسل تسجيلاً للتفريغ"),
+        KeyboardButton("🟣 🧠 بنك الأسئلة والمراجعة الذاتية")
+    )
+    markup.row(
+        KeyboardButton("🟡 📚 المعجم الفقهي والأصولي"),
+        KeyboardButton("🟠 📅 جدولي الدراسي والامتحانات")
+    )
+    markup.row(
+        KeyboardButton("🔵 🌐 المترجم الفوري الشامل"),
+        KeyboardButton("⚙️ 🌐 لغة تفريغ الصوت")
+    )
+    markup.row(KeyboardButton("🔴 ❌ إلغاء"))
     if user_id == ADMIN_ID or str(user_id) == str(ADMIN_ID):
-        markup.row(KeyboardButton("👑 لوحة تحكم الإدارة والمطورة"))
+        markup.row(KeyboardButton("👑 💎 لوحة تحكم الإدارة والمطورة"))
     return markup
 
 def admin_panel_menu():
@@ -1417,8 +1426,9 @@ def send_help(message):
         "📖 **دليل الاستخدام السريع:**\n\n"
         "1️⃣ **لتفريغ محاضرة أو تسجيل:** أرسل المقطع الصوتي أو المرئي مباشرة، وسيقوم البوت بتجزئته وتفريغه وإرسال ملف Word كامل منسق مع الأسئلة والملخص.\n"
         "2️⃣ **للتسجيلات الطويلة (ساعة وساعتين):** أرسل المحاضرة كـ Voice Note أو قلل حجم الملف عن 20 ميغابايت وسيتولى البوت الباقي بشريط تقدم حي.\n"
-        "3️⃣ **للمذاكرة والاختبار:** اضغط على زر '🧠 بنك الأسئلة والمراجعة الذاتية' للمراجعة الأكاديمية دون تكرار.\n        4️⃣ **للمعجم الأصولي:** اضغط على زر '📚 المعجم الفقهي والأصولي' للقواعد والمقاصد.\n"
-        "4️⃣ **للاستفسار الأكاديمي:** اكتب أي سؤال وسيجيبك المساعد العلمي الذكي."
+        "3️⃣ **للمذاكرة والاختبار:** اضغط على زر '🟣 🧠 بنك الأسئلة والمراجعة الذاتية' للمراجعة الأكاديمية دون تكرار.\n"
+        "4️⃣ **للمعجم الأصولي:** اضغط على زر '🟡 📚 المعجم الفقهي والأصولي' للقواعد والمقاصد.\n"
+        "5️⃣ **للاستفسار الأكاديمي:** اكتب أي سؤال وسيجيبك المساعد العلمي الذكي."
     )
     bot.send_message(message.chat.id, help_text, parse_mode="Markdown", reply_markup=permanent_keyboard(message.from_user.id))
 
