@@ -32,3 +32,4 @@ temp_*
 Thumbs.db
 .idea/
 .vscode/
+*.bat
