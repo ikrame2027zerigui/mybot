@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>مدوّن الإكرام الأكاديمي — القائمة الرئيسية</title>
+    <!-- تضمين مكتبة تيليجرام للويب آب -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=Amiri:wght@700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-cream: #FDFBF7;
+            --bg-page: #F7F3E9;
+            --beige-light: #F4ECE1;
+            --beige-mid: #E8DAC6;
+            --beige-dark: #D4C3A3;
+            --brown-soft: #8D6E63;
+            --brown-deep: #5C4033;
+            --brown-dark: #3E2723;
+            --gold-accent: #C5A059;
+            --text-dark: #2C1810;
+            --text-muted: #6D5B4F;
+            --shadow-warm: 0 4px 16px rgba(92, 64, 51, 0.08);
+            --shadow-hover: 0 6px 20px rgba(92, 64, 51, 0.14);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            font-family: 'Tajawal', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-page);
+            background-image: radial-gradient(#E8DAC6 1px, transparent 1px);
+            background-size: 20px 20px;
+            color: var(--text-dark);
+            padding: 16px 14px 28px 14px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+
+        /* رأس الصفحة الأكاديمي الفاخر */
+        .header {
+            text-align: center;
+            background: linear-gradient(135deg, #FAF6EE 0%, #F0E6D2 100%);
+            border: 1px solid var(--beige-mid);
+            border-radius: 20px;
+            padding: 18px 14px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-warm);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::after {
+            content: "🌿";
+            position: absolute;
+            left: 14px;
+            top: 14px;
+            font-size: 20px;
+            opacity: 0.8;
+        }
+
+        .header::before {
+            content: "✨";
+            position: absolute;
+            right: 14px;
+            top: 14px;
+            font-size: 18px;
+            opacity: 0.8;
+        }
+
+        .header-title {
+            font-family: 'Amiri', serif;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--brown-deep);
+            margin-bottom: 4px;
+            letter-spacing: -0.3px;
+        }
+
+        .header-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .badge-univ {
+            display: inline-block;
+            background-color: var(--brown-deep);
+            color: #FAF6EE;
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            margin-top: 8px;
+            font-weight: 700;
+        }
+
+        /* شبكة مربعات الأزرار بألوان البيج والكريمي والبني */
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .btn-card {
+            border: none;
+            outline: none;
+            border-radius: 18px;
+            padding: 18px 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
+            box-shadow: var(--shadow-warm);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            user-select: none;
+        }
+
+        .btn-card:active {
+            transform: scale(0.96);
+            box-shadow: 0 2px 8px rgba(92, 64, 51, 0.12);
+        }
+
+        .btn-card .icon-box {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            margin-bottom: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+        }
+
+        .btn-card .title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            line-height: 1.3;
+        }
+
+        .btn-card .desc {
+            font-size: 11px;
+            line-height: 1.3;
+            opacity: 0.85;
+        }
+
+        /* تدرجات ألوان البلاطات المخصصة */
+
+        /* 1. مربع كريمي فاخر لتفريغ المحاضرات */
+        .card-cream {
+            background: linear-gradient(145deg, #FFFDF9, #F5EBE0);
+            border: 1.5px solid #E6D5C3;
+            color: #3E2723;
+        }
+        .card-cream .icon-box {
+            background: #EFE4D6;
+        }
+
+        /* 2. مربع بيج أكاديمي لبنك الأسئلة والمراجعة */
+        .card-beige-gold {
+            background: linear-gradient(145deg, #F4ECE1, #E8DAC6);
+            border: 1.5px solid #D4C3A3;
+            color: #2C1810;
+        }
+        .card-beige-gold .icon-box {
+            background: #DFCBB4;
+        }
+
+        /* 3. مربع بني دافئ ومخملي للمعجم الفقهي */
+        .card-brown {
+            background: linear-gradient(145deg, #6D4C41, #4E342E);
+            border: 1.5px solid #3E2723;
+            color: #FFF8E7;
+        }
+        .card-brown .icon-box {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .card-brown .desc {
+            color: #EFEBE9;
+        }
+
+        /* 4. مربع ترابي ناعم للجدول الدراسي */
+        .card-sand {
+            background: linear-gradient(145deg, #EFEBE9, #D7CCC8);
+            border: 1.5px solid #BCAAA4;
+            color: #3E2723;
+        }
+        .card-sand .icon-box {
+            background: #CFD8DC;
+            background: #D7CCC8;
+        }
+
+        /* 5. مربع كراميل ذهبي للمترجم الفوري */
+        .card-caramel {
+            background: linear-gradient(145deg, #E6D5C3, #D7B99C);
+            border: 1.5px solid #C49F7B;
+            color: #2C1810;
+        }
+        .card-caramel .icon-box {
+            background: #C49F7B;
+        }
+
+        /* 6. مربع بيج رملي للغة التفريغ */
+        .card-wheat {
+            background: linear-gradient(145deg, #FAF4EB, #EDE0D4);
+            border: 1.5px solid #D5BDAF;
+            color: #3E2723;
+        }
+        .card-wheat .icon-box {
+            background: #E3D5CA;
+        }
+
+        /* زر عريض في الأسفل للملخص ودليل المذاكرة */
+        .full-width-card {
+            grid-column: span 2;
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: flex-start;
+            text-align: right;
+            padding: 14px 18px;
+            gap: 14px;
+            background: linear-gradient(145deg, #5C4033, #3E2723);
+            border: 1.5px solid #2C1810;
+            color: #FAF6EE;
+        }
+        .full-width-card .icon-box {
+            margin-bottom: 0;
+            background: rgba(255, 255, 255, 0.16);
+            flex-shrink: 0;
+        }
+        .full-width-card .text-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* زر الإلغاء الأنيق */
+        .cancel-btn {
+            grid-column: span 2;
+            background: #EDE0D4;
+            border: 1px dashed #BCAAA4;
+            color: #6D4C41;
+            padding: 12px;
+            border-radius: 14px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .cancel-btn:active {
+            background: #D7CCC8;
+        }
+
+        /* التذييل الأكاديمي */
+        .footer {
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 14px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- رأس الصفحة الفاخر -->
+    <div class="header">
+        <h1 class="header-title">مدوّن الإكرام الأكاديمي</h1>
+        <p class="header-subtitle">الرفيق الذكي لطلبة العلوم الإسلامية والدراسات العليا</p>
+        <span class="badge-univ">جامعة الجزائر 1 — خروبة 🏛️</span>
+    </div>
+
+    <!-- شبكة المربعات بالألوان الكريمية، البيج، والبنية -->
+    <div class="grid-container">
+        
+        <!-- 1. تفريغ المحاضرات (كريمي فاخر) -->
+        <button class="btn-card card-cream" onclick="sendAction('أرسل تسجيلاً للتفريغ')">
+            <div class="icon-box">🎙️</div>
+            <div class="title">تفريغ المحاضرات</div>
+            <div class="desc">تحويل التسجيل إلى مستند Word وملخص</div>
+        </button>
+
+        <!-- 2. بنك الأسئلة (بيج دافئ) -->
+        <button class="btn-card card-beige-gold" onclick="sendAction('بنك الأسئلة والمراجعة الذاتية')">
+            <div class="icon-box">🧠</div>
+            <div class="title">بنك الأسئلة والمراجعة</div>
+            <div class="desc">اختبارات ذاتية بدون تكرار</div>
+        </button>
+
+        <!-- 3. المعجم الفقهي والأصولي (بني فاخر) -->
+        <button class="btn-card card-brown" onclick="sendAction('المعجم الفقهي والأصولي')">
+            <div class="icon-box">📚</div>
+            <div class="title">المعجم الفقهي والأصولي</div>
+            <div class="desc">القواعد ومقاصد الشريعة</div>
+        </button>
+
+        <!-- 4. جدولي الدراسي (بيج ترابي) -->
+        <button class="btn-card card-sand" onclick="sendAction('جدولي الدراسي والامتحانات')">
+            <div class="icon-box">📅</div>
+            <div class="title">الجدول الدراسي</div>
+            <div class="desc">أوقات المحاضرات والامتحانات</div>
+        </button>
+
+        <!-- 5. المترجم الفوري الشامل (كراميل دافئ) -->
+        <button class="btn-card card-caramel" onclick="sendAction('المترجم الفوري الشامل')">
+            <div class="icon-box">🌐</div>
+            <div class="title">المترجم الأكاديمي</div>
+            <div class="desc">ترجمة فورية لـ 6 لغات</div>
+        </button>
+
+        <!-- 6. لغة تفريغ الصوت (قمحي ناعم) -->
+        <button class="btn-card card-wheat" onclick="sendAction('تغيير لغة تفريغ الصوت')">
+            <div class="icon-box">⚙️</div>
+            <div class="title">لغة التفريغ</div>
+            <div class="desc">العربية، الفصحى، ولغات أجنبية</div>
+        </button>
+
+        <!-- 7. دليل المذاكرة السريعة (عرض كامل) -->
+        <button class="btn-card full-width-card" onclick="sendAction('/summary')">
+            <div class="icon-box">💡</div>
+            <div class="text-group">
+                <div class="title">دليل المذاكرة السريعة</div>
+                <div class="desc">طرق تلخيص واستذكار الدروس بكفاءة</div>
+            </div>
+        </button>
+
+        <!-- زر الإلغاء -->
+        <button class="cancel-btn" onclick="sendAction('إلغاء')">
+            ✖️ إغلاق والعودة للمحادثة
+        </button>
+
+    </div>
+
+    <!-- التذييل الأكاديمي -->
+    <div class="footer">
+        طُوّر بعناية لطلبة كلية العلوم الإسلامية 🌿
+    </div>
+
+    <script>
+        // تهيئة التيليجرام WebApp
+        const tg = window.Telegram ? window.Telegram.WebApp : null;
+        if (tg) {
+            try {
+                tg.ready();
+                tg.expand();
+                tg.setHeaderColor('#F7F3E9');
+                tg.setBackgroundColor('#F7F3E9');
+            } catch (e) {
+                console.log("TG init error:", e);
+            }
+        }
+
+        function sendAction(actionText) {
+            // تشغيل تأثير الاهتزاز الخفيف اللمسي
+            if (tg && tg.HapticFeedback) {
+                try {
+                    tg.HapticFeedback.impactOccurred('medium');
+                } catch (e) {}
+            }
+
+            // إرسال البيانات للبوت
+            if (tg && tg.initData) {
+                try {
+                    tg.sendData(actionText);
+                    tg.close();
+                    return;
+                } catch (err) {
+                    console.log("sendData error:", err);
+                }
+            }
+
+            // بديل في حال فُتحت الصفحة في متصفح خارجي
+            const cleanAction = encodeURIComponent(actionText);
+            window.location.href = "https://t.me/MudawinaIkramBot?start=" + cleanAction;
+        }
+    </script>
+</body>
+</html>

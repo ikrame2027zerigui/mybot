@@ -10,7 +10,7 @@ from datetime import datetime
 import telebot
 from telebot.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton, BotCommand
+    ReplyKeyboardMarkup, KeyboardButton, BotCommand, WebAppInfo
 )
 import speech_recognition as sr
 from pydub import AudioSegment
@@ -38,6 +38,11 @@ if not TOKEN:
 
 TG_API_ID = int(os.environ.get("TG_API_ID", 35521120))
 TG_API_HASH = os.environ.get("TG_API_HASH", "149519bc317198bd16527e19fd4bada1")
+
+# رابط الواجهة التفاعلية الأكاديمية المصغرة (Mini App)
+WEB_APP_URL = os.environ.get("WEB_APP_URL") or os.environ.get("RENDER_EXTERNAL_URL") or "https://ikrame2027zerigui.github.io/mybot/"
+if WEB_APP_URL and not WEB_APP_URL.startswith("http"):
+    WEB_APP_URL = "https://" + WEB_APP_URL
 
 def is_port_open(port, host="127.0.0.1"):
     import socket
@@ -800,6 +805,7 @@ def ask_ai_study_assistant(query, user_name="الطالب"):
 # ==========================================
 bot.set_my_commands([
     BotCommand("start", "🟢 تشغيل البوت والترحيب 🌿"),
+    BotCommand("menu", "📜 القائمة الأكاديمية (بيج وبني) ✨"),
     BotCommand("quiz", "🟣 بنك الأسئلة والمراجعة 🧠"),
     BotCommand("dictionary", "🟡 المعجم الفقهي والأصولي 📚"),
     BotCommand("translate", "🔵 المترجم الفوري الشامل 🌐"),
@@ -813,6 +819,8 @@ bot.set_my_commands([
 
 def permanent_keyboard(user_id=None):
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    if WEB_APP_URL:
+        markup.row(KeyboardButton("📜 القائمة الأكاديمية الفاخرة (بيج وبني) ✨", web_app=WebAppInfo(url=WEB_APP_URL)))
     markup.row(
         KeyboardButton("🟢 🎙️ أرسل تسجيلاً للتفريغ"),
         KeyboardButton("🟣 🧠 بنك الأسئلة والمراجعة الذاتية")
@@ -1863,8 +1871,30 @@ def set_language_callback(call):
     )
 
 # ==========================================
-# 💬 معالجة الرسائل النصية والمحادثة الذكية
+# 💬 معالجة الرسائل النصية والمحادثة الذكية وقائمة الويب
 # ==========================================
+@bot.message_handler(commands=['menu'])
+def handle_menu_command(message):
+    user_name = message.from_user.first_name or "طالب العلم"
+    markup = InlineKeyboardMarkup()
+    if WEB_APP_URL:
+        markup.add(InlineKeyboardButton("📜 فتح القائمة الأكاديمية (بيج وبني) ✨", web_app=WebAppInfo(url=WEB_APP_URL)))
+    bot.send_message(
+        message.chat.id,
+        f"🌿 **مرحباً بك يا {user_name} في القائمة الأكاديمية الفاخرة:**\n\n"
+        "🎨 تم تصميم هذه الواجهة التفاعلية بألوان الكتب والمخطوطات الأنيقة (البيج، الكريمي، والبني).\n"
+        "👇 اضغطي على الزر أدناه لفتح القائمة التفاعلية المصغرة فوراً:",
+        parse_mode="Markdown",
+        reply_markup=markup if WEB_APP_URL else permanent_keyboard(message.from_user.id)
+    )
+
+@bot.message_handler(content_types=['web_app_data'])
+def handle_web_app_received_data(message):
+    if message.web_app_data and message.web_app_data.data:
+        chosen = message.web_app_data.data.strip()
+        message.text = chosen
+        handle_personalized_text(message)
+
 @bot.message_handler(content_types=['text'])
 def handle_personalized_text(message):
     chat_id = message.chat.id
