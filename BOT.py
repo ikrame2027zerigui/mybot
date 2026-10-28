@@ -500,10 +500,30 @@ def smart_multi_translate(query_text, target_lang='ar'):
         return quick_vocab[query_clean][target_lang]
 
     browser_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "*/*",
         "Accept-Language": "ar,en-US;q=0.9,en;q=0.8,fr;q=0.7"
     }
+
+    # 1. المحرك الأول: Google Translate GTX المباشر (الأعلى اعتمادية وسرعة ومقاومة للحظر)
+    try:
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {
+            "client": "gtx",
+            "sl": "auto",
+            "tl": target_lang,
+            "dt": "t",
+            "q": query_clean
+        }
+        r = requests.get(url, params=params, headers=browser_headers, timeout=6)
+        if r.status_code == 200:
+            data = r.json()
+            if data and isinstance(data, list) and isinstance(data[0], list):
+                res = "".join(item[0] for item in data[0] if item and len(item) > 0 and item[0])
+                if res.strip():
+                    return res.strip()
+    except Exception as e_gtx:
+        print("GTX engine notice:", e_gtx)
 
     # 1. المحرك الأول: Google Chrome Extension Builtin API (أقوى وأسرع محرك، لا يُحظر إطلاقاً في السيرفرات)
     try:
@@ -1412,25 +1432,29 @@ def handle_translate_command(message):
     parts = message.text.split(maxsplit=1)
     if len(parts) > 1 and parts[1].strip():
         query = parts[1].strip()
-        try:
-            translated = translator.translate(query)
-            bot.reply_to(
-                message,
-                f"🌐 **الترجمة الفورية يا {user_name}:**\n\n«{translated}»",
-                parse_mode="Markdown",
-                reply_markup=permanent_keyboard(message.from_user.id)
-            )
-        except Exception:
-            bot.reply_to(
-                message,
-                "⚠️ تعذرت الترجمة الفورية حالياً. يرجى التأكد من كتابة النص بشكل صحيح والمحاولة لاحقاً.",
-                reply_markup=permanent_keyboard(message.from_user.id)
-            )
-    else:
+        has_arabic = any('\u0600' <= char <= '\u06FF' for char in query)
+        target = "en" if has_arabic else "ar"
+        target_title = "الإنجليزية 🇬🇧" if has_arabic else "العربية 🇸🇦"
+        
+        translated = smart_multi_translate(query, target_lang=target)
+        cache_id = str(int(time.time()))[-6:]
+        TRANSLATION_CACHE[cache_id] = query
+        
         bot.reply_to(
             message,
-            f"🌐 **خدمة الترجمة الأكاديمية يا {user_name}:**\n\n"
-            "اكتب الأمر متبوعاً بالنص الذي تريد ترجمته، مثال:\n"
+            f"🌐 **الترجمة الفورية إلى {target_title} يا {user_name}:**\n\n"
+            f"«{translated}»\n\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"💡 *اضغطي على أي لغة أدناه لتحويل الترجمة إليها فوراً:*",
+            parse_mode="Markdown",
+            reply_markup=get_translation_markup(cache_id)
+        )
+    else:
+        USER_TRANSLATE_STATE[message.chat.id] = True
+        bot.reply_to(
+            message,
+            f"🌐 **خدمة المترجم الفوري الشامل يا {user_name}:**\n\n"
+            "✏️ أرسلي أي نص الآن وسيقوم البوت بترجمته فوراً، أو اكتبي الأمر متبوعاً بالنص، مثال:\n"
             "`/translate Artificial intelligence in Islamic studies`",
             parse_mode="Markdown",
             reply_markup=permanent_keyboard(message.from_user.id)
