@@ -24,7 +24,7 @@ except ImportError:
     load_dotenv = None
 import requests
 
-from keep_alive import keep_alive
+from keep_alive import keep_alive, register_action_callback
 
 # تحميل متغيرات البيئة من ملف .env
 if load_dotenv:
@@ -1404,10 +1404,130 @@ def handle_admin_callbacks(call):
         bot.edit_message_text(uptime_info, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=admin_panel_menu())
 
 
+def handle_webapp_direct_action(user_id, action):
+    """معالجة نقرات واجهة الويب المصغرة (Mini App) وتنفيذ الخدمات فوراً للمستخدم"""
+    try:
+        user_id = int(user_id)
+        chat_id = user_id
+        action_clean = str(action).strip()
+
+        # 1. إلغاء
+        if "إلغاء" in action_clean or action_clean in ["cancel", "/cancel"]:
+            if chat_id in USER_QUIZ_STATE:
+                del USER_QUIZ_STATE[chat_id]
+            if chat_id in USER_TRANSLATE_STATE:
+                del USER_TRANSLATE_STATE[chat_id]
+            bot.send_message(chat_id, "✅ تم إلغاء العمليات الحالية والعودة للوضع الطبيعي.", reply_markup=permanent_keyboard(user_id))
+            return
+
+        # 2. تفريغ المحاضرات
+        if "تفريغ" in action_clean or "تسجيل" in action_clean or action_clean == "transcribe":
+            bot.send_message(
+                chat_id,
+                "🎙️ **خدمة تفريغ المحاضرات والتسجيلات:**\n\n"
+                "تفضل بإرسال التسجيل الصوتي (Voice Note)، أو ملف صوتي (MP3/WAV)، أو مقطع فيديو الآن، وسأتولى تفريغه فوراً كملف Word احترافي مع ملخص واختبار! ✨",
+                parse_mode="Markdown",
+                reply_markup=permanent_keyboard(user_id)
+            )
+            return
+
+        # 3. بنك الأسئلة
+        if "بنك الأسئلة" in action_clean or "المراجعة" in action_clean or action_clean in ["quiz", "/quiz"]:
+            chosen_idx, selected_quiz, current_num, total_q, is_completed_round = get_next_quiz(user_id)
+            USER_QUIZ_STATE[chat_id] = selected_quiz
+            options_text = "\n".join(selected_quiz["options"])
+            congrats_header = "🎉 **ما شاء الله! أتممتِ جميع أسئلة البنك! تبدأ الآن جولة مراجعة متجددة:**\n\n" if is_completed_round else ""
+            quiz_msg = (
+                f"{congrats_header}🧠 **«بنك الأسئلة والمراجعة الذاتية» — السؤال [{current_num} من أصل {total_q}]:**\n"
+                f"🏷️ **التخصص:** `{selected_quiz['category']}`\n\n"
+                f"❓ **السؤال:**\n{selected_quiz['question']}\n\n"
+                f"{options_text}\n\n"
+                "👇 *اضغطي على الخيار الصحيح:*"
+            )
+            markup = InlineKeyboardMarkup()
+            markup.row(
+                InlineKeyboardButton("أ", callback_data="quiz_ans_أ"),
+                InlineKeyboardButton("ب", callback_data="quiz_ans_ب"),
+                InlineKeyboardButton("ج", callback_data="quiz_ans_ج")
+            )
+            bot.send_message(chat_id, quiz_msg, parse_mode="Markdown", reply_markup=markup)
+            return
+
+        # 4. المعجم الفقهي والأصولي
+        if "معجم" in action_clean or "المعجم" in action_clean or action_clean in ["dictionary", "dict", "/dictionary"]:
+            markup = InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                InlineKeyboardButton("📖 القواعد الفقهية الخمس", callback_data="dict_qawaid"),
+                InlineKeyboardButton("⚖️ أدلة أصول الفقه", callback_data="dict_usul"),
+                InlineKeyboardButton("🔍 ضوابط الحديث الصحيح", callback_data="dict_hadith"),
+                InlineKeyboardButton("🎯 مقاصد الشريعة الكبرى", callback_data="dict_maqasid"),
+                InlineKeyboardButton("📐 أركان وضوابط القياس", callback_data="dict_qiyas"),
+                InlineKeyboardButton("🏛️ المعاملات والبيوع المعاصرة", callback_data="dict_muamalat")
+            )
+            bot.send_message(
+                chat_id,
+                "📚 **المعجم الفقهي والأصولي السريع — مدوّن الإكرام:**\n\n"
+                "تفضلي باختيار الباب أو المسألة التي ترغبين في استعراض قواعدها وضوابطها الأكاديمية فوراً:",
+                parse_mode="Markdown",
+                reply_markup=markup
+            )
+            return
+
+        # 5. جدولي الدراسي
+        if "جدول" in action_clean or action_clean in ["schedule", "/schedule"]:
+            sch = USER_SCHEDULES.get(chat_id, "لم تقم بإدخال جدولك بعد. يمكنك كتابة `/set_schedule` لإدخال مقاييسك ومواعيدك وسأحفظها لك فوراً! 📅")
+            bot.send_message(chat_id, f"📅 **جدولك الدراسي المعتمد:**\n\n{sch}", parse_mode="Markdown", reply_markup=permanent_keyboard(user_id))
+            return
+
+        # 6. المترجم الفوري
+        if "مترجم" in action_clean or "المترجم" in action_clean or action_clean in ["translate", "/translate"]:
+            USER_TRANSLATE_STATE[chat_id] = True
+            bot.send_message(
+                chat_id,
+                "🌐 **المترجم الأكاديمي الفوري لجميع اللغات:**\n\n"
+                "✏️ **تفضلي بكتابة أي جملة أو كلمة أو فقرة الآن مباشرة في الشات:**\n"
+                "(سواء كانت بالعربية، الإنجليزية، الفرنسية، الروسية أو غيرها)\n\n"
+                "✨ وسيقوم البوت بترجمتها فوراً مع إمكانية تحويلها لأي لغة ترغبين بها بضغطة زر واحدة! 🌍",
+                parse_mode="Markdown",
+                reply_markup=permanent_keyboard(user_id)
+            )
+            return
+
+        # 7. تغيير لغة التفريغ
+        if "لغة" in action_clean or action_clean in ["lang", "language"]:
+            bot.send_message(chat_id, "🌐 اختر لغة تفريغ المقاطع الصوتية من القائمة أدناه:", reply_markup=language_menu())
+            return
+
+        # 8. دليل المذاكرة
+        if "مذاكرة" in action_clean or "ملخص" in action_clean or action_clean in ["summary", "/summary"]:
+            bot.send_message(
+                chat_id,
+                "💡 **دليل المذاكرة الأكاديمية السريعة والذكية:**\n\n"
+                "1️⃣ **المذاكرة النشطة:** حوّل كل مسألة فقهية أو أصولية إلى سؤال وجواب باستخدام بنك الأسئلة (`/quiz`).\n"
+                "2️⃣ **تفريغ المحاضرات:** أرسل التسجيل الصوتي للمحاضرة فور انتهائها، وسيقوم البوت باستخراج ملخص في 5 نقاط ومستند Word منظم.\n"
+                "3️⃣ **المعجم الأصولي:** استعن بالقواعد الخمس الكبرى وضوابط القياس لحفظ أصول الفقه (`/dictionary`).\n"
+                "4️⃣ **الجدول الدراسي:** راجع مواعيد امتحاناتك ومقاييسك دائماً عبر (`/schedule`).",
+                parse_mode="Markdown",
+                reply_markup=permanent_keyboard(user_id)
+            )
+            return
+
+    except Exception as ex_act:
+        print("Error handling webapp action:", ex_act)
+
+register_action_callback(handle_webapp_direct_action)
+
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     register_or_update_user(message.from_user)
     name = message.from_user.first_name or "صديقي"
+    
+    parts = message.text.split(maxsplit=1)
+    if len(parts) > 1 and parts[1].strip():
+        param = parts[1].strip()
+        handle_webapp_direct_action(message.chat.id, param)
+        return
     banner_text = (
         "╔═══════════════════════════════════╗\n"
         "   🌟 **مُدَوِّنُ الْإِكْرَامِ — المساعد الجامعي** 🌟   \n"
@@ -1892,8 +2012,7 @@ def handle_menu_command(message):
 def handle_web_app_received_data(message):
     if message.web_app_data and message.web_app_data.data:
         chosen = message.web_app_data.data.strip()
-        message.text = chosen
-        handle_personalized_text(message)
+        handle_webapp_direct_action(message.chat.id, chosen)
 
 @bot.message_handler(content_types=['text'])
 def handle_personalized_text(message):

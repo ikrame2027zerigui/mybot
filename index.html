@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>مدوّن الإكرام الأكاديمي — القائمة الرئيسية</title>
-    <!-- تضمين مكتبة تيليجرام للويب آب -->
+    <!-- تضمين مكتبة تيليجرام للويب آب الرسمية -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -200,7 +200,6 @@
             color: #3E2723;
         }
         .card-sand .icon-box {
-            background: #CFD8DC;
             background: #D7CCC8;
         }
 
@@ -273,9 +272,28 @@
             margin-top: 14px;
             font-weight: 500;
         }
+
+        /* مؤشر التحميل المؤقت */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(247, 243, 233, 0.85);
+            z-index: 999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--brown-deep);
+        }
     </style>
 </head>
 <body>
+
+    <div id="loadingOverlay" class="loading-overlay">
+        <p>⏳ جاري التنفيذ والعودة للمحادثة...</p>
+    </div>
 
     <!-- رأس الصفحة الفاخر -->
     <div class="header">
@@ -288,49 +306,49 @@
     <div class="grid-container">
         
         <!-- 1. تفريغ المحاضرات (كريمي فاخر) -->
-        <button class="btn-card card-cream" onclick="sendAction('أرسل تسجيلاً للتفريغ')">
+        <button class="btn-card card-cream" onclick="sendAction('أرسل تسجيلاً للتفريغ', 'transcribe')">
             <div class="icon-box">🎙️</div>
             <div class="title">تفريغ المحاضرات</div>
             <div class="desc">تحويل التسجيل إلى مستند Word وملخص</div>
         </button>
 
         <!-- 2. بنك الأسئلة (بيج دافئ) -->
-        <button class="btn-card card-beige-gold" onclick="sendAction('بنك الأسئلة والمراجعة الذاتية')">
+        <button class="btn-card card-beige-gold" onclick="sendAction('بنك الأسئلة والمراجعة الذاتية', 'quiz')">
             <div class="icon-box">🧠</div>
             <div class="title">بنك الأسئلة والمراجعة</div>
             <div class="desc">اختبارات ذاتية بدون تكرار</div>
         </button>
 
         <!-- 3. المعجم الفقهي والأصولي (بني فاخر) -->
-        <button class="btn-card card-brown" onclick="sendAction('المعجم الفقهي والأصولي')">
+        <button class="btn-card card-brown" onclick="sendAction('المعجم الفقهي والأصولي', 'dict')">
             <div class="icon-box">📚</div>
             <div class="title">المعجم الفقهي والأصولي</div>
             <div class="desc">القواعد ومقاصد الشريعة</div>
         </button>
 
         <!-- 4. جدولي الدراسي (بيج ترابي) -->
-        <button class="btn-card card-sand" onclick="sendAction('جدولي الدراسي والامتحانات')">
+        <button class="btn-card card-sand" onclick="sendAction('جدولي الدراسي والامتحانات', 'schedule')">
             <div class="icon-box">📅</div>
             <div class="title">الجدول الدراسي</div>
             <div class="desc">أوقات المحاضرات والامتحانات</div>
         </button>
 
         <!-- 5. المترجم الفوري الشامل (كراميل دافئ) -->
-        <button class="btn-card card-caramel" onclick="sendAction('المترجم الفوري الشامل')">
+        <button class="btn-card card-caramel" onclick="sendAction('المترجم الفوري الشامل', 'translate')">
             <div class="icon-box">🌐</div>
             <div class="title">المترجم الأكاديمي</div>
             <div class="desc">ترجمة فورية لـ 6 لغات</div>
         </button>
 
         <!-- 6. لغة تفريغ الصوت (قمحي ناعم) -->
-        <button class="btn-card card-wheat" onclick="sendAction('تغيير لغة تفريغ الصوت')">
+        <button class="btn-card card-wheat" onclick="sendAction('تغيير لغة تفريغ الصوت', 'lang')">
             <div class="icon-box">⚙️</div>
             <div class="title">لغة التفريغ</div>
             <div class="desc">العربية، الفصحى، ولغات أجنبية</div>
         </button>
 
         <!-- 7. دليل المذاكرة السريعة (عرض كامل) -->
-        <button class="btn-card full-width-card" onclick="sendAction('/summary')">
+        <button class="btn-card full-width-card" onclick="sendAction('دليل المذاكرة السريعة', 'summary')">
             <div class="icon-box">💡</div>
             <div class="text-group">
                 <div class="title">دليل المذاكرة السريعة</div>
@@ -339,7 +357,7 @@
         </button>
 
         <!-- زر الإلغاء -->
-        <button class="cancel-btn" onclick="sendAction('إلغاء')">
+        <button class="cancel-btn" onclick="sendAction('إلغاء', 'cancel')">
             ✖️ إغلاق والعودة للمحادثة
         </button>
 
@@ -364,28 +382,61 @@
             }
         }
 
-        function sendAction(actionText) {
-            // تشغيل تأثير الاهتزاز الخفيف اللمسي
+        function sendAction(actionText, slug) {
+            // اهتزاز لمسي
             if (tg && tg.HapticFeedback) {
                 try {
                     tg.HapticFeedback.impactOccurred('medium');
                 } catch (e) {}
             }
 
-            // إرسال البيانات للبوت
-            if (tg && tg.initData) {
+            const overlay = document.getElementById('loadingOverlay');
+            if (overlay) overlay.style.display = 'flex';
+
+            const user = (tg && tg.initDataUnsafe) ? tg.initDataUnsafe.user : null;
+            const userId = user ? user.id : null;
+
+            // 1. إذا توفر معرّف المستخدم عبر التيليجرام: إرسال الطلب فوراً لـ API السيرفر
+            if (userId) {
+                fetch('/api/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, action: slug || actionText })
+                }).then(function() {
+                    setTimeout(function() {
+                        if (tg) { tg.close(); }
+                    }, 150);
+                }).catch(function() {
+                    fallbackSend(actionText, slug);
+                });
+                return;
+            }
+
+            fallbackSend(actionText, slug);
+        }
+
+        function fallbackSend(actionText, slug) {
+            // 2. المحاولة عبر sendData إذا فُتحت من لوحة المفاتيح
+            if (tg) {
                 try {
                     tg.sendData(actionText);
                     tg.close();
                     return;
-                } catch (err) {
-                    console.log("sendData error:", err);
-                }
+                } catch (e) {}
             }
 
-            // بديل في حال فُتحت الصفحة في متصفح خارجي
-            const cleanAction = encodeURIComponent(actionText);
-            window.location.href = "https://t.me/MudawinaIkramBot?start=" + cleanAction;
+            // 3. المحاولة عبر رابط التيليجرام العميق
+            const deepParam = slug || encodeURIComponent(actionText);
+            const tgLink = "https://t.me/MudawinaIkramBot?start=" + deepParam;
+            if (tg && tg.openTelegramLink) {
+                try {
+                    tg.openTelegramLink(tgLink);
+                    tg.close();
+                    return;
+                } catch (e) {}
+            }
+
+            window.location.href = tgLink;
         }
     </script>
 </body>
