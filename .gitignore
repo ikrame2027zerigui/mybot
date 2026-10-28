@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Environment Variables (يحمي معلوماتك السرية والتوكن من الرفع على GitHub)
+.env
+.env.local
+.env.*.local
+
+# Database / User data
+bot_users.json
+
+# Generated and temporary files
+*.docx
+*.txt
+!requirements.txt
+!bot_history.txt
+temp_*
+/tmp/
+*.url
+~$*
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -30,12 +30,23 @@ if load_dotenv:
 
 TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
-    import base64
-    _ENC = "ODgxOTgzMDgwMTpBQUVCb3kwWnBpWG84NVgyZXR0XzY0b3E0cjg1RHA1cEZBZw=="
-    TOKEN = base64.b64decode(_ENC).decode("utf-8")
+    raise SystemExit(
+        "❌ خطأ: لم يتم تعيين متغير البيئة BOT_TOKEN!\n"
+        "👉 يرجى إنشاء ملف .env وكتابة: BOT_TOKEN=توكن_البوت_الخاص_بك\n"
+        "أو ضبطه في إعدادات البيئة (Environment Variables) في منصة الاستضافة."
+    )
 
 TG_API_ID = int(os.environ.get("TG_API_ID", 35521120))
 TG_API_HASH = os.environ.get("TG_API_HASH", "149519bc317198bd16527e19fd4bada1")
+
+def is_port_open(port, host="127.0.0.1"):
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1.5)
+            return s.connect_ex((host, port)) == 0
+    except Exception:
+        return False
 
 def init_local_telegram_bot_api():
     """تشغيل خادم تيليجرام المحلي لرفع حد تحميل الملفات إلى 2000 ميغابايت (2GB)"""
@@ -55,9 +66,12 @@ def init_local_telegram_bot_api():
         try:
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(2.5)
-            telebot.apihelper.API_URL = "http://127.0.0.1:8081/bot{0}/{1}"
-            telebot.apihelper.FILE_URL = "http://127.0.0.1:8081/file/bot{0}/{1}"
-            print("🚀 خادم Telegram Bot API المحلي يعمل بنجاح! تم فتح دعم الملفات الكبيرة حتى 2000 ميغابايت (2GB)!")
+            if is_port_open(8081):
+                telebot.apihelper.API_URL = "http://127.0.0.1:8081/bot{0}/{1}"
+                telebot.apihelper.FILE_URL = "http://127.0.0.1:8081/file/bot{0}/{1}"
+                print("🚀 خادم Telegram Bot API المحلي يعمل بنجاح! تم فتح دعم الملفات الكبيرة حتى 2000 ميغابايت (2GB)!")
+            else:
+                print("ℹ️ خادم Telegram Bot API المحلي لم يستجب على المنفذ 8081، سيتم استخدام خادم تيليجرام الرسمي.")
         except Exception as e:
             print("Local bot api notice:", e)
 
@@ -71,7 +85,7 @@ translator = GoogleTranslator(source='auto', target='ar')
 
 listening_language = "ar-DZ"
 
-ADMIN_ID = 6619712661
+ADMIN_ID = int(os.environ.get("ADMIN_ID", 6619712661))
 USERS_DB_FILE = "bot_users.json"
 ADMIN_BROADCAST_STATE = {}
 USER_TRANSLATE_STATE = {}
@@ -1916,10 +1930,5 @@ except Exception:
     pass
 
 keep_alive()
-
-try:
-    bot.remove_webhook()
-except Exception:
-    pass
 
 bot.infinity_polling(timeout=20, long_polling_timeout=20)

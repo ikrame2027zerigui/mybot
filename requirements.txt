@@ -1,0 +1,8 @@
+pyTelegramBotAPI>=4.15.0
+SpeechRecognition>=3.10.0
+pydub>=0.25.1
+python-docx>=1.1.0
+deep-translator>=1.11.4
+flask>=3.0.0
+python-dotenv>=1.0.0
+requests>=2.31.0

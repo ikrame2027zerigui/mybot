@@ -1,4 +1,0 @@
-pyTelegramBotAPI
-SpeechRecognition
-pydub
-deep-translator
