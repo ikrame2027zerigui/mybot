@@ -517,54 +517,52 @@ def smart_multi_translate(query_text, target_lang='ar'):
         "Accept-Language": "ar,en-US;q=0.9,en;q=0.8,fr;q=0.7"
     }
 
-    # 1. المحرك الأول: Google Translate Mobile API (العميل الرسمي tw-ob لا يُحظر إطلاقاً في خوادم السحاب)
+    # 1. المحرك الأول: Google Translate AT Engine (أسرع وأدق محرك، لا يُحظر إطلاقاً في السيرفرات السحابية)
     try:
         url = "https://translate.googleapis.com/translate_a/single"
         params = {
-            "client": "tw-ob",
+            "client": "at",
             "sl": "auto",
             "tl": target_lang,
             "dt": "t",
             "q": query_clean
         }
-        r = requests.get(url, params=params, headers=mobile_headers, timeout=5)
+        r = requests.get(url, params=params, headers=browser_headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
             if data and isinstance(data, list) and isinstance(data[0], list):
                 res = "".join(item[0] for item in data[0] if item and len(item) > 0 and item[0])
                 if res.strip():
                     return res.strip()
-    except Exception as e_tw:
-        print("tw-ob engine notice:", e_tw)
+    except Exception as e_at:
+        print("AT engine notice:", e_at)
 
-    # 2. المحرك الثاني: Google Translate GTX المباشر مع ترويسة أندرويد
+    # 2. المحرك الثاني: Google Translate Dict Builtin (مباشر وفائق السرعة)
     try:
         url = "https://translate.googleapis.com/translate_a/single"
         params = {
-            "client": "gtx",
+            "client": "dict-chrome-ex",
             "sl": "auto",
             "tl": target_lang,
             "dt": "t",
             "q": query_clean
         }
-        r = requests.get(url, params=params, headers=mobile_headers, timeout=5)
+        r = requests.get(url, params=params, headers=browser_headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
             if data and isinstance(data, list) and isinstance(data[0], list):
                 res = "".join(item[0] for item in data[0] if item and len(item) > 0 and item[0])
                 if res.strip():
                     return res.strip()
-    except Exception as e_gtx:
-        print("GTX engine notice:", e_gtx)
+    except Exception as e_dc:
+        print("dict-chrome-ex engine notice:", e_dc)
 
-    # 3. المحرك الثالث: MyMemory API مع تدوير حسابات الطلاب لتفادي نفاذ الرصيد اليومي
+    # 3. المحرك الثالث: MyMemory API المعتمد دولياً
     try:
-        rand_id = random.randint(1000, 999999)
         url = "https://api.mymemory.translated.net/get"
         params = {
             "q": query_clean[:500],
-            "langpair": f"{src_lang}|{target_lang}",
-            "de": f"univ_student_{rand_id}@univ-alger.dz"
+            "langpair": f"{src_lang}|{target_lang}"
         }
         r = requests.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
         if r.status_code == 200:
@@ -586,7 +584,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
             "tl": target_lang,
             "q": query_clean
         }
-        r = requests.get(url, params=params, headers=mobile_headers, timeout=5)
+        r = requests.get(url, params=params, headers=browser_headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, list) and data:
@@ -605,7 +603,28 @@ def smart_multi_translate(query_text, target_lang='ar'):
     except Exception as e_c5:
         print("Chrome-ex engine notice:", e_c5)
 
-    # 5. المحرك الخامس: Google Mobile Web (واجهة هواتف آيفون m.translate)
+    # 5. المحرك الخامس: Google Mobile API (tw-ob و gtx)
+    try:
+        for cl in ["tw-ob", "gtx"]:
+            url = "https://translate.googleapis.com/translate_a/single"
+            params = {
+                "client": cl,
+                "sl": "auto",
+                "tl": target_lang,
+                "dt": "t",
+                "q": query_clean
+            }
+            r = requests.get(url, params=params, headers=mobile_headers, timeout=4)
+            if r.status_code == 200:
+                data = r.json()
+                if data and isinstance(data, list) and isinstance(data[0], list):
+                    res = "".join(item[0] for item in data[0] if item and len(item) > 0 and item[0])
+                    if res.strip():
+                        return res.strip()
+    except Exception as e_mob:
+        print("Mobile engine notice:", e_mob)
+
+    # 6. المحرك السادس: Google Mobile Web (واجهة هواتف آيفون m.translate)
     try:
         url = "https://translate.google.com/m"
         params = {"sl": "auto", "tl": target_lang, "q": query_clean}
@@ -627,7 +646,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
     except Exception as e_m:
         print("Google Mobile engine notice:", e_m)
 
-    # 6. المحرك السادس: ذكاء اصطناعي Gemini (إذا توفر المفتاح)
+    # 7. المحرك السابع: ذكاء اصطناعي Gemini (إذا توفر المفتاح)
     if GEMINI_API_KEY:
         try:
             lang_labels = {"ar": "العربية", "en": "English", "fr": "Français", "ru": "Русский", "es": "Español", "tr": "Türkçe"}
@@ -642,7 +661,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
         except Exception as e_gem:
             print("Gemini translate notice:", e_gem)
 
-    # 7. المحرك السابع: deep_translator كاحتياطي أخير
+    # 8. المحرك الثامن: deep_translator كاحتياطي أخير
     try:
         from deep_translator import GoogleTranslator
         t_fallback = GoogleTranslator(source='auto', target=target_lang).translate(query_clean)
