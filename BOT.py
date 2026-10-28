@@ -805,7 +805,7 @@ def ask_ai_study_assistant(query, user_name="الطالب"):
 # ==========================================
 bot.set_my_commands([
     BotCommand("start", "🟢 تشغيل البوت والترحيب 🌿"),
-    BotCommand("menu", "📜 القائمة الأكاديمية (بيج وبني) ✨"),
+    BotCommand("menu", "📜 القائمة الأكاديمية الشاملة ✨"),
     BotCommand("quiz", "🟣 بنك الأسئلة والمراجعة 🧠"),
     BotCommand("dictionary", "🟡 المعجم الفقهي والأصولي 📚"),
     BotCommand("translate", "🔵 المترجم الفوري الشامل 🌐"),
@@ -820,7 +820,7 @@ bot.set_my_commands([
 def permanent_keyboard(user_id=None):
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     if WEB_APP_URL:
-        markup.row(KeyboardButton("📜 القائمة الأكاديمية الفاخرة (بيج وبني) ✨", web_app=WebAppInfo(url=WEB_APP_URL)))
+        markup.row(KeyboardButton("📜 القائمة الأكاديمية الشاملة ✨", web_app=WebAppInfo(url=WEB_APP_URL)))
     markup.row(
         KeyboardButton("🟢 🎙️ أرسل تسجيلاً للتفريغ"),
         KeyboardButton("🟣 🧠 بنك الأسئلة والمراجعة الذاتية")
@@ -1998,11 +1998,11 @@ def handle_menu_command(message):
     user_name = message.from_user.first_name or "طالب العلم"
     markup = InlineKeyboardMarkup()
     if WEB_APP_URL:
-        markup.add(InlineKeyboardButton("📜 فتح القائمة الأكاديمية (بيج وبني) ✨", web_app=WebAppInfo(url=WEB_APP_URL)))
+        markup.add(InlineKeyboardButton("📜 فتح القائمة الأكاديمية الشاملة ✨", web_app=WebAppInfo(url=WEB_APP_URL)))
     bot.send_message(
         message.chat.id,
-        f"🌿 **مرحباً بك يا {user_name} في القائمة الأكاديمية الفاخرة:**\n\n"
-        "🎨 تم تصميم هذه الواجهة التفاعلية بألوان الكتب والمخطوطات الأنيقة (البيج، الكريمي، والبني).\n"
+        f"🌿 **مرحباً بك يا {user_name} في القائمة الأكاديمية الشاملة:**\n\n"
+        "🏛️ تصفحي جميع الخدمات والوسائل التعليمية المتاحة بضغطة زر واحدة:\n"
         "👇 اضغطي على الزر أدناه لفتح القائمة التفاعلية المصغرة فوراً:",
         parse_mode="Markdown",
         reply_markup=markup if WEB_APP_URL else permanent_keyboard(message.from_user.id)
