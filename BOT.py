@@ -517,7 +517,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
         "Accept-Language": "ar,en-US;q=0.9,en;q=0.8,fr;q=0.7"
     }
 
-    # 1. المحرك الأول: Google Translate AT Engine (أسرع وأدق محرك، لا يُحظر إطلاقاً في السيرفرات السحابية)
+    # 1. المحرك الأول: Google Translate AT Engine مع ترويسة أندرويد الرسمية (لا يُحظر في السيرفرات إطلاقاً)
     try:
         url = "https://translate.googleapis.com/translate_a/single"
         params = {
@@ -527,7 +527,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
             "dt": "t",
             "q": query_clean
         }
-        r = requests.get(url, params=params, headers=browser_headers, timeout=5)
+        r = requests.get(url, params=params, headers=mobile_headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
             if data and isinstance(data, list) and isinstance(data[0], list):
@@ -537,7 +537,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
     except Exception as e_at:
         print("AT engine notice:", e_at)
 
-    # 2. المحرك الثاني: Google Translate Dict Builtin (مباشر وفائق السرعة)
+    # 2. المحرك الثاني: Google Translate Dict Builtin مع ترويسة أندرويد
     try:
         url = "https://translate.googleapis.com/translate_a/single"
         params = {
@@ -547,7 +547,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
             "dt": "t",
             "q": query_clean
         }
-        r = requests.get(url, params=params, headers=browser_headers, timeout=5)
+        r = requests.get(url, params=params, headers=mobile_headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
             if data and isinstance(data, list) and isinstance(data[0], list):
@@ -557,12 +557,14 @@ def smart_multi_translate(query_text, target_lang='ar'):
     except Exception as e_dc:
         print("dict-chrome-ex engine notice:", e_dc)
 
-    # 3. المحرك الثالث: MyMemory API المعتمد دولياً
+    # 3. المحرك الثالث: MyMemory API المعتمد دولياً مع تدوير الحسابات
     try:
+        rand_id = random.randint(100, 99999)
         url = "https://api.mymemory.translated.net/get"
         params = {
             "q": query_clean[:500],
-            "langpair": f"{src_lang}|{target_lang}"
+            "langpair": f"{src_lang}|{target_lang}",
+            "de": f"univ_student_{rand_id}@univ-alger.dz"
         }
         r = requests.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
         if r.status_code == 200:
@@ -575,7 +577,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
     except Exception as e_mymem:
         print("MyMemory engine notice:", e_mymem)
 
-    # 4. المحرك الرابع: Google Chrome Extension Builtin API
+    # 4. المحرك الرابع: Google Chrome Extension Builtin API مع ترويسة أندرويد
     try:
         url = "https://clients5.google.com/translate_a/t"
         params = {
@@ -584,7 +586,7 @@ def smart_multi_translate(query_text, target_lang='ar'):
             "tl": target_lang,
             "q": query_clean
         }
-        r = requests.get(url, params=params, headers=browser_headers, timeout=5)
+        r = requests.get(url, params=params, headers=mobile_headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
             if isinstance(data, list) and data:
@@ -1468,9 +1470,31 @@ def handle_translation_language_choice(call):
         target_lang = parts[1]
         cache_id = parts[2]
         original_text = TRANSLATION_CACHE.get(cache_id)
+        
+        # استرجاع النص بذكاء في حال إعادة تشغيل السيرفر وتفريغ الذاكرة
+        if not original_text:
+            if call.message and call.message.reply_to_message and call.message.reply_to_message.text:
+                raw = call.message.reply_to_message.text.strip()
+                for prefix in ["/translate", "ترجم لي:", "ترجم لي ", "ترجمة:", "ترجم:", "ترجم "]:
+                    if raw.lower().startswith(prefix.lower()):
+                        raw = raw[len(prefix):].strip()
+                        break
+                original_text = raw
+            elif call.message and call.message.text:
+                m_txt = re.search(r'«(.*?)»', call.message.text, re.DOTALL)
+                if m_txt:
+                    original_text = m_txt.group(1).strip()
+                elif "الترجمة الفورية" in call.message.text:
+                    lines = [l.strip() for l in call.message.text.split("\n") if l.strip()]
+                    content_lines = [l for l in lines if not l.startswith("🌐") and not l.startswith("━") and not l.startswith("💡") and not l.startswith("*")]
+                    if content_lines:
+                        original_text = "\n".join(content_lines).strip()
+
         if not original_text:
             bot.answer_callback_query(call.id, "انتهت جلسة هذه الترجمة. اكتب النص مجدداً وسيترجم فوراً.")
             return
+
+        TRANSLATION_CACHE[cache_id] = original_text
 
         lang_names = {
             "ar": "العربية 🇸🇦",
@@ -1508,8 +1532,14 @@ def handle_lecture_summary_callback(call):
     cache_id = parts[1] if len(parts) > 1 else ""
     text = TRANSLATION_CACHE.get(cache_id)
     if not text:
+        if call.message and call.message.text:
+            m_txt = re.search(r'«(.*?)»', call.message.text, re.DOTALL)
+            if m_txt:
+                text = m_txt.group(1).strip()
+    if not text:
         bot.answer_callback_query(call.id, "انتهت جلسة هذه المحاضرة. يمكنكِ إرسال المقطع مجدداً.")
         return
+    TRANSLATION_CACHE[cache_id] = text
     bot.answer_callback_query(call.id, "💡 جاري استخراج وتوليد ملخص المحاضرة...")
     summary = generate_smart_lecture_summary(text)
     markup = InlineKeyboardMarkup()
@@ -1526,8 +1556,14 @@ def handle_lecture_doc_callback(call):
     cache_id = parts[1] if len(parts) > 1 else ""
     text = TRANSLATION_CACHE.get(cache_id)
     if not text:
+        if call.message and call.message.text:
+            m_txt = re.search(r'«(.*?)»', call.message.text, re.DOTALL)
+            if m_txt:
+                text = m_txt.group(1).strip()
+    if not text:
         bot.answer_callback_query(call.id, "انتهت جلسة هذه المحاضرة.")
         return
+    TRANSLATION_CACHE[cache_id] = text
     bot.answer_callback_query(call.id, "📄 جاري إرسال مستند Word...")
     user_name = call.from_user.first_name or "طالب العلم"
     doc_path = f"lecture_{cache_id}.docx"
