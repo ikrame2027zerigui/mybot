@@ -7,9 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# تنزيل محرك خادم تيليجرام الرسمي المباشر لدعم الملفات حتى 2000 ميغابايت (2GB)
-RUN curl -fsSL -o /usr/local/bin/telegram-bot-api https://github.com/jakbin/telegram-bot-api-binary/releases/download/2026-08-05/telegram-bot-api \
-    && chmod +x /usr/local/bin/telegram-bot-api
+# تنزيل محرك خادم تيليجرام الرسمي المباشر لدعم الملفات حتى 2000 ميغابايت (2GB) مع حماية ضد فشل التحميل
+RUN (curl -fsSL -o /usr/local/bin/telegram-bot-api https://github.com/jakbin/telegram-bot-api-binary/releases/download/2026-08-05/telegram-bot-api && chmod +x /usr/local/bin/telegram-bot-api) || true
 
 WORKDIR /app
 
